@@ -1,0 +1,281 @@
+version: '3.9'
+
+services:
+  # ── Infrastructure ─────────────────────────
+  postgres-auth:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: banking_auth
+      POSTGRES_USER: banking
+      POSTGRES_PASSWORD: banking-secret
+    ports: ["5432:5432"]
+    volumes: [postgres-auth-data:/var/lib/postgresql/data]
+    networks: [banking-network]
+    healthcheck:
+      test: ["CMD-SHELL","pg_isready -U banking"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-accounts:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: banking_accounts
+      POSTGRES_USER: banking
+      POSTGRES_PASSWORD: banking-secret
+    ports: ["5433:5432"]
+    volumes: [postgres-accounts-data:/var/lib/postgresql/data]
+    networks: [banking-network]
+    healthcheck:
+      test: ["CMD-SHELL","pg_isready -U banking"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-transactions:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: banking_transactions
+      POSTGRES_USER: banking
+      POSTGRES_PASSWORD: banking-secret
+    ports: ["5434:5432"]
+    volumes: [postgres-transactions-data:/var/lib/postgresql/data]
+    networks: [banking-network]
+
+  postgres-payments:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: banking_payments
+      POSTGRES_USER: banking
+      POSTGRES_PASSWORD: banking-secret
+    ports: ["5435:5432"]
+    volumes: [postgres-payments-data:/var/lib/postgresql/data]
+    networks: [banking-network]
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
+    networks: [banking-network]
+    healthcheck:
+      test: ["CMD","redis-cli","ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mongodb:
+    image: mongo:7
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: banking
+      MONGO_INITDB_ROOT_PASSWORD: banking-secret
+    ports: ["27017:27017"]
+    volumes: [mongodb-data:/data/db]
+    networks: [banking-network]
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks: [banking-network]
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on: [zookeeper]
+    ports: ["9092:9092"]
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    networks: [banking-network]
+    healthcheck:
+      test: ["CMD","kafka-broker-api-versions","--bootstrap-server","localhost:9092"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.5.0
+    depends_on: [kafka]
+    ports: ["8085:8085"]
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:29092
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8085
+    networks: [banking-network]
+
+  elasticsearch:
+    image: elasticsearch:8.11.0
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports: ["9200:9200"]
+    volumes: [elasticsearch-data:/usr/share/elasticsearch/data]
+    networks: [banking-network]
+
+  # ── Spring Services ─────────────────────────
+  discovery-server:
+    build: services/discovery-server
+    ports: ["8761:8761"]
+    environment:
+      EUREKA_USERNAME: eureka
+      EUREKA_PASSWORD: eureka-secret
+    networks: [banking-network]
+    healthcheck:
+      test: ["CMD","curl","-f","http://localhost:8761/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  config-server:
+    build: services/config-server
+    ports: ["8888:8888"]
+    depends_on:
+      discovery-server:
+        condition: service_healthy
+    environment:
+      EUREKA_USERNAME: eureka
+      EUREKA_PASSWORD: eureka-secret
+    networks: [banking-network]
+
+  api-gateway:
+    build: services/api-gateway
+    ports: ["8080:8080"]
+    depends_on:
+      discovery-server:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_HOST: redis
+      EUREKA_USERNAME: eureka
+      EUREKA_PASSWORD: eureka-secret
+      JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-minimum-32-chars-here}
+    networks: [banking-network]
+
+  auth-service:
+    build: services/auth-service
+    ports: ["8081:8081"]
+    depends_on:
+      postgres-auth:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres-auth
+      DB_NAME: banking_auth
+      DB_USERNAME: banking
+      DB_PASSWORD: banking-secret
+      REDIS_HOST: redis
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SCHEMA_REGISTRY_URL: http://schema-registry:8085
+      JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-minimum-32-chars-here}
+    networks: [banking-network]
+
+  account-service:
+    build: services/account-service
+    ports: ["8083:8083"]
+    depends_on:
+      postgres-accounts:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres-accounts
+      DB_NAME: banking_accounts
+      DB_USERNAME: banking
+      DB_PASSWORD: banking-secret
+      REDIS_HOST: redis
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SCHEMA_REGISTRY_URL: http://schema-registry:8085
+      JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-minimum-32-chars-here}
+    networks: [banking-network]
+
+  transaction-service:
+    build: services/transaction-service
+    ports: ["8084:8084"]
+    depends_on:
+      postgres-transactions:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres-transactions
+      DB_NAME: banking_transactions
+      DB_USERNAME: banking
+      DB_PASSWORD: banking-secret
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SCHEMA_REGISTRY_URL: http://schema-registry:8085
+      JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-minimum-32-chars-here}
+    networks: [banking-network]
+
+  payment-service:
+    build: services/payment-service
+    ports: ["8086:8085"]
+    depends_on:
+      postgres-payments:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres-payments
+      DB_NAME: banking_payments
+      DB_USERNAME: banking
+      DB_PASSWORD: banking-secret
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SCHEMA_REGISTRY_URL: http://schema-registry:8085
+      JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-minimum-32-chars-here}
+    networks: [banking-network]
+
+  # ── Monitoring ──────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    ports: ["9090:9090"]
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    networks: [banking-network]
+
+  grafana:
+    image: grafana/grafana:latest
+    ports: ["3001:3000"]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes: [grafana-data:/var/lib/grafana]
+    networks: [banking-network]
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    ports: ["8090:8080"]
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://schema-registry:8085
+    networks: [banking-network]
+
+volumes:
+  postgres-auth-data:
+  postgres-accounts-data:
+  postgres-transactions-data:
+  postgres-payments-data:
+  mongodb-data:
+  elasticsearch-data:
+  grafana-data:
+
+networks:
+  banking-network:
+    driver: bridge
