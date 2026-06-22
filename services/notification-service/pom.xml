@@ -11,19 +11,17 @@
     </parent>
     <artifactId>notification-service</artifactId>
     <name>Notification Service</name>
-    <description>Email, SMS, push notifications via Kafka + WebSocket/SSE</description>
+    <description>Email, SMS, Push, WebSocket real-time notifications</description>
     <dependencies>
         <dependency><groupId>com.banking</groupId><artifactId>security-lib</artifactId></dependency>
         <dependency><groupId>com.banking</groupId><artifactId>common-utils</artifactId></dependency>
         <dependency><groupId>com.banking</groupId><artifactId>kafka-lib</artifactId></dependency>
-        <dependency><groupId>com.banking</groupId><artifactId>audit-lib</artifactId></dependency>
         <dependency><groupId>com.banking</groupId><artifactId>exception-lib</artifactId></dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId></dependency>
-        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-data-jpa</artifactId></dependency>
-        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-validation</artifactId></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-data-mongodb</artifactId></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-websocket</artifactId></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-mail</artifactId></dependency>
         <dependency><groupId>org.springframework.cloud</groupId><artifactId>spring-cloud-starter-netflix-eureka-client</artifactId></dependency>
-        <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId><scope>runtime</scope></dependency>
-        <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-core</artifactId></dependency>
         <dependency><groupId>org.springdoc</groupId><artifactId>springdoc-openapi-starter-webmvc-ui</artifactId></dependency>
     </dependencies>
     <build>
