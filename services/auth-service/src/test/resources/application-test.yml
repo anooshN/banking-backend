@@ -1,0 +1,21 @@
+spring:
+  datasource:
+    url: jdbc:tc:postgresql:16-alpine:///banking_auth_test
+    username: banking
+    password: banking-secret
+    driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+  flyway:
+    enabled: false
+  data:
+    redis:
+      host: localhost
+      port: 6370
+
+banking:
+  jwt:
+    secret: test-secret-key-that-is-at-least-32-characters-long
+    access-token-expiration-ms: 900000
+    refresh-token-expiration-ms: 86400000
