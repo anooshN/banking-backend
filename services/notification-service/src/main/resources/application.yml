@@ -1,0 +1,27 @@
+server:
+  port: 8086
+spring:
+  application:
+    name: notification-service
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:5432/${DB_NAME:banking_notification_service}
+    username: ${DB_USERNAME:banking}
+    password: ${DB_PASSWORD:banking-secret}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: notification-service-group
+    properties:
+      schema.registry.url: ${SCHEMA_REGISTRY_URL:http://localhost:8081}
+eureka:
+  client:
+    service-url:
+      defaultZone: http://eureka:eureka-secret@localhost:8761/eureka/
+banking:
+  jwt:
+    secret: ${JWT_SECRET:your-256-bit-secret-key-here-minimum-32-chars}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
