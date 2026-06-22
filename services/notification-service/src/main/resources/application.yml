@@ -3,14 +3,22 @@ server:
 spring:
   application:
     name: notification-service
-  datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:5432/${DB_NAME:banking_notification_service}
-    username: ${DB_USERNAME:banking}
-    password: ${DB_PASSWORD:banking-secret}
+  data:
+    mongodb:
+      uri: mongodb://${MONGO_USERNAME:banking}:${MONGO_PASSWORD:banking-secret}@${MONGO_HOST:localhost}:27017/${MONGO_DB:banking_notifications}?authSource=admin
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:noreply@bankingapp.com}
+    password: ${MAIL_PASSWORD:mail-secret}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     consumer:
       group-id: notification-service-group
+      auto-offset-reset: earliest
     properties:
       schema.registry.url: ${SCHEMA_REGISTRY_URL:http://localhost:8081}
 eureka:
