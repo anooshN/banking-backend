@@ -1,0 +1,35 @@
+server:
+  port: 8888
+
+spring:
+  application:
+    name: config-server
+  security:
+    user:
+      name: ${CONFIG_SERVER_USERNAME:config}
+      password: ${CONFIG_SERVER_PASSWORD:config-secret}
+  cloud:
+    config:
+      server:
+        git:
+          uri: ${CONFIG_GIT_URI:https://github.com/anooshN/banking-config}
+          default-label: main
+          search-paths: '{application}'
+          clone-on-start: true
+          force-pull: true
+        encrypt:
+          enabled: true
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://eureka:eureka-secret@localhost:8761/eureka/
+
+encrypt:
+  key: ${ENCRYPT_KEY:my-very-secure-encryption-key-32chars}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
