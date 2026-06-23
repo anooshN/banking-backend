@@ -1,0 +1,48 @@
+{
+  "title": "Fraud Detection — Real-Time",
+  "uid": "banking-fraud",
+  "schemaVersion": 38,
+  "tags": ["banking", "fraud", "security"],
+  "time": { "from": "now-24h", "to": "now" },
+  "refresh": "10s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Fraud Alerts (last 24h)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "targets": [{ "expr": "sum(increase(banking_fraud_detected_total[24h]))" }],
+      "fieldConfig": { "defaults": { "color": { "fixedColor": "red", "mode": "fixed" } } }
+    },
+    {
+      "id": 2,
+      "title": "Fraud by Risk Level",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 8, "x": 4, "y": 0 },
+      "targets": [{
+        "expr": "sum by (risk_level) (increase(banking_fraud_detected_total[24h]))",
+        "legendFormat": "{{risk_level}}"
+      }]
+    },
+    {
+      "id": 3,
+      "title": "Fraud Score Distribution",
+      "type": "histogram",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [{
+        "expr": "rate(banking_fraud_score_bucket[5m])",
+        "legendFormat": "score {{le}}"
+      }]
+    },
+    {
+      "id": 4,
+      "title": "High-Velocity Accounts (flagged)",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      "targets": [{
+        "expr": "topk(10, banking_fraud_velocity_count)",
+        "legendFormat": "{{user_id}}"
+      }]
+    }
+  ]
+}
