@@ -12,24 +12,49 @@ spring:
     config:
       server:
         git:
+          # Points to the dedicated config repository
           uri: ${CONFIG_GIT_URI:https://github.com/anooshN/banking-config}
-          default-label: main
+          default-label: ${CONFIG_GIT_BRANCH:main}
+          # Each service has its own folder: auth-service/, account-service/, etc.
           search-paths: '{application}'
           clone-on-start: true
           force-pull: true
+          timeout: 10
+          refresh-rate: 30
+          # For private repo: set these as environment variables
+          username: ${CONFIG_GIT_USERNAME:}
+          password: ${CONFIG_GIT_PASSWORD:}
+          # Fallback: use a local copy if GitHub is unreachable
+          basedir: /tmp/config-repo-clone
         encrypt:
           enabled: true
+        # Health indicator: fail fast if the Git repo is unreachable
+        health:
+          repositories:
+            check:
+              name: auth-service
+
+# Encryption key for {cipher} values in config files
+# In production: set via environment variable, never hardcode here
+encrypt:
+  key: ${ENCRYPT_KEY:local-dev-encryption-key-32-chars!}
 
 eureka:
   client:
     service-url:
-      defaultZone: http://eureka:eureka-secret@localhost:8761/eureka/
-
-encrypt:
-  key: ${ENCRYPT_KEY:my-very-secure-encryption-key-32chars}
+      defaultZone: http://${EUREKA_USERNAME:eureka}:${EUREKA_PASSWORD:eureka-secret}@localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus
+        include: health,info,metrics,prometheus,refresh,busrefresh,env
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    org.springframework.cloud.config: DEBUG  # useful for diagnosing config fetch issues
