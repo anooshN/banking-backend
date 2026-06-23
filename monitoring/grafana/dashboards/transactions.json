@@ -1,0 +1,71 @@
+{
+  "title": "Transaction Service — Deep Dive",
+  "uid": "banking-transactions",
+  "schemaVersion": 38,
+  "tags": ["banking", "transactions"],
+  "time": { "from": "now-1h", "to": "now" },
+  "refresh": "15s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Transactions per Second",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "targets": [{
+        "expr": "sum(rate(http_server_requests_seconds_count{application='transaction-service', uri=~'/api/v1/transactions.*', status='200'}[1m]))"
+      }],
+      "fieldConfig": { "defaults": { "unit": "reqps" } }
+    },
+    {
+      "id": 2,
+      "title": "Transaction Volume (USD)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "targets": [{
+        "expr": "sum(increase(banking_transaction_amount_sum[1h]))"
+      }],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" } }
+    },
+    {
+      "id": 3,
+      "title": "Failed Transactions",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "targets": [{
+        "expr": "sum(increase(banking_transaction_failed_total[1h]))"
+      }],
+      "fieldConfig": { "defaults": { "color": { "fixedColor": "red", "mode": "fixed" } } }
+    },
+    {
+      "id": 4,
+      "title": "Insufficient Funds Errors",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [{
+        "expr": "rate(banking_insufficient_funds_total[5m])",
+        "legendFormat": "Insufficient funds/s"
+      }]
+    },
+    {
+      "id": 5,
+      "title": "Kafka Publish Latency (transaction events)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [{
+        "expr": "histogram_quantile(0.99, rate(kafka_producer_request_latency_avg_bucket{topic='banking.transaction.events'}[5m]))",
+        "legendFormat": "p99 kafka latency"
+      }],
+      "fieldConfig": { "defaults": { "unit": "ms" } }
+    },
+    {
+      "id": 6,
+      "title": "Circuit Breaker State (account-service)",
+      "type": "state-timeline",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 12 },
+      "targets": [{
+        "expr": "resilience4j_circuitbreaker_state{name='account-service'}",
+        "legendFormat": "{{state}}"
+      }]
+    }
+  ]
+}

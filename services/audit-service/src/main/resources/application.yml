@@ -3,16 +3,20 @@ server:
 spring:
   application:
     name: audit-service
-  datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:5432/${DB_NAME:banking_audit_service}
-    username: ${DB_USERNAME:banking}
-    password: ${DB_PASSWORD:banking-secret}
+  data:
+    cassandra:
+      contact-points: ${CASSANDRA_HOST:localhost}
+      port: ${CASSANDRA_PORT:9042}
+      keyspace-name: banking_audit
+      local-datacenter: datacenter1
+      username: ${CASSANDRA_USERNAME:cassandra}
+      password: ${CASSANDRA_PASSWORD:cassandra}
+      schema-action: CREATE_IF_NOT_EXISTS
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     consumer:
       group-id: audit-service-group
-    properties:
-      schema.registry.url: ${SCHEMA_REGISTRY_URL:http://localhost:8081}
+      auto-offset-reset: earliest
 eureka:
   client:
     service-url:

@@ -4,15 +4,15 @@ spring:
   application:
     name: report-service
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:5432/${DB_NAME:banking_report_service}
+    url: jdbc:postgresql://${DB_HOST:localhost}:5432/${DB_NAME:banking_reports}
     username: ${DB_USERNAME:banking}
     password: ${DB_PASSWORD:banking-secret}
-  kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
-    consumer:
-      group-id: report-service-group
-    properties:
-      schema.registry.url: ${SCHEMA_REGISTRY_URL:http://localhost:8081}
+  batch:
+    jdbc:
+      initialize-schema: always
+  jpa:
+    hibernate:
+      ddl-auto: update
 eureka:
   client:
     service-url:
@@ -20,6 +20,10 @@ eureka:
 banking:
   jwt:
     secret: ${JWT_SECRET:your-256-bit-secret-key-here-minimum-32-chars}
+aws:
+  region: ${AWS_REGION:us-east-1}
+  s3:
+    bucket: ${S3_BUCKET:banking-statements}
 management:
   endpoints:
     web:
