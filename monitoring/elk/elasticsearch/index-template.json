@@ -1,0 +1,33 @@
+{
+  "index_patterns": ["banking-logs-*"],
+  "template": {
+    "settings": {
+      "number_of_shards": 3,
+      "number_of_replicas": 1,
+      "index.lifecycle.name": "banking-logs-policy",
+      "index.lifecycle.rollover_alias": "banking-logs"
+    },
+    "mappings": {
+      "properties": {
+        "@timestamp":      { "type": "date" },
+        "service_name":    { "type": "keyword" },
+        "log_level":       { "type": "keyword" },
+        "correlation_id":  { "type": "keyword" },
+        "log_message":     { "type": "text", "analyzer": "standard" },
+        "duration_ms":     { "type": "long" },
+        "user_id":         { "type": "keyword" },
+        "account_id":      { "type": "keyword" },
+        "transaction_id":  { "type": "keyword" },
+        "amount":          { "type": "double" },
+        "clientip":        { "type": "ip" },
+        "geoip": {
+          "properties": {
+            "location":    { "type": "geo_point" },
+            "country_name":{ "type": "keyword" },
+            "city_name":   { "type": "keyword" }
+          }
+        }
+      }
+    }
+  }
+}
