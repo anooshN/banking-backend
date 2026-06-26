@@ -1,624 +1,633 @@
-# Module 01 — Core Java Fundamentals
+# Module 1 — Core Java Fundamentals
 
 ---
 
-## 1. Variables & Data Types
+## 1. Variables and Data Types
 
-### Concept
-Java has two kinds of variables:
-- **Primitive** — stores the value directly (`int`, `long`, `double`, `boolean`, `char`, `byte`, `short`, `float`)
-- **Reference** — stores the memory address of an object (`String`, `UUID`, `BigDecimal`, any class)
-
----
-
-### STAR Answer — Why We Used BigDecimal Instead of double for Money
+### Primitive vs Object Types
 
 **Situation:**
-In our banking application, every account balance, transaction amount, and payment value involved money. We needed to store and calculate these values precisely.
+In the banking app we store money amounts, user IDs, flags, and text. Using the wrong data type causes bugs — a `double` for money causes rounding errors, a plain `int` for IDs limits scale.
 
 **Task:**
-Choose the right data type for monetary values. The wrong choice could cause calculation errors — for example, charging a customer the wrong amount.
+Choose the right data type for every field so the application is correct, efficient, and safe.
 
 **Action:**
-We used `BigDecimal` throughout the entire codebase instead of `double` or `float`.
 
 ```java
-// In Account entity:
+// services/auth-service — User.java
+
+// int: small whole numbers — failed login count (max 2 billion is fine)
+private int failedLoginAttempts;
+
+// boolean: true/false flag — is MFA turned on?
+private boolean mfaEnabled;
+
+// String: text — email, names (reference type, stored on heap)
+private String email;
+private String firstName;
+
+// UUID: globally unique ID — primary keys (128-bit, unguessable)
+private UUID id;
+
+// LocalDateTime: date + time with no timezone — audit timestamps
+private LocalDateTime createdAt;
+private LocalDateTime lockedUntil;
+
+// Set<String>: collection of unique roles — "ROLE_CUSTOMER", "ROLE_ADMIN"
+private Set<String> roles;
+```
+
+```java
+// shared/common-utils — anywhere money is involved
+
+// NEVER use double or float for money:
+double wrong = 0.1 + 0.2;
+System.out.println(wrong); // 0.30000000000000004 — WRONG
+
+// ALWAYS use BigDecimal for money:
+// services/account-service — Account.java
 @Column(nullable = false, precision = 19, scale = 4)
 private BigDecimal balance;
-
-// In TransactionService — debit logic:
-BigDecimal currentBalance = accountServiceClient.getBalance(accountId);
-
-if (currentBalance.compareTo(amount) < 0) {
-    throw new InsufficientFundsException(accountId.toString());
-}
-
-BigDecimal balanceAfter = currentBalance.subtract(amount);
-
-// In LoanService — EMI calculation:
-BigDecimal monthlyRate = annualRate.divide(BigDecimal.valueOf(1200), 10, RoundingMode.HALF_UP);
-BigDecimal emi = principal.multiply(monthlyRate).multiply(power)
-                          .divide(denominator, 2, RoundingMode.HALF_UP);
+// precision=19: up to 19 digits total
+// scale=4: 4 digits after decimal point
+// Stores $999,999,999,999,999.9999 exactly
 ```
 
 **Result:**
-Zero rounding errors in financial calculations. If we had used `double`:
-```java
-double a = 0.1 + 0.2;
-System.out.println(a); // prints 0.30000000000000004 — WRONG!
+- No rounding errors in financial calculations — the bank never loses fractions of cents
+- UUIDs prevent ID guessing attacks (sequential int IDs are predictable)
+- `boolean` is memory-efficient for flags — uses 1 byte vs 4 bytes for Integer
 
-// This error compounds across thousands of transactions:
-// 1000 transactions × 0.000000000000001 error = small but real discrepancy
-// In banking, even 1 paisa wrong = compliance violation
-```
+**Interview Questions:**
+- Q: Why not use `double` for money?
+  A: "In our banking project, we faced the situation where we needed to store account balances. The task was to choose a data type that never loses precision. We chose `BigDecimal` because double is stored in binary floating point which cannot exactly represent decimals like 0.1. The result was that our balance calculations are always exact — critical when handling real money."
 
----
-
-### STAR Answer — Why We Used UUID Instead of int for Primary Keys
-
-**Situation:**
-Our banking app has 14 microservices, each with its own database. Multiple services generate records simultaneously.
-
-**Task:**
-Choose a primary key type that is unique across ALL services and ALL databases — without any coordination.
-
-**Action:**
-We used `UUID` as the primary key for every entity:
-
-```java
-// In Account entity:
-@Id
-@GeneratedValue(strategy = GenerationType.UUID)
-private UUID id;
-// PostgreSQL generates: uuid_generate_v4() → "550e8400-e29b-41d4-a716-446655440000"
-
-// In controllers — URL parameters:
-@GetMapping("/{accountId}")
-public ResponseEntity<?> getAccount(@PathVariable UUID accountId) {
-    // Spring automatically converts "550e8400-..." string → UUID object
-}
-
-// In service code:
-String correlationId = UUID.randomUUID().toString();
-// Every request gets a unique tracking ID for tracing across services
-```
-
-**Result:**
-- **Security:** With `int` IDs (1, 2, 3...), an attacker guesses `id=1001` to access another user's account. UUIDs are unguessable.
-- **No coordination:** Services generate UUIDs independently — no central ID generator needed.
-- **Cross-service:** A transaction can reference an `accountId` UUID without knowing which database or service owns it.
-
----
-
-### STAR Answer — Variables and Scope in Auth Service
-
-**Situation:**
-In our auth-service, the account lockout logic requires tracking failed login attempts and comparing timestamps.
-
-**Task:**
-Use the right variable types and scopes to implement lockout safely.
-
-**Action:**
-```java
-// Class-level constant (static final) — shared, never changes
-private static final int MAX_LOGIN_ATTEMPTS = 5;
-private static final String BLACKLIST_PREFIX = "blacklist:";
-private static final String REFRESH_PREFIX   = "refresh:";
-
-// Instance-level final fields — injected once, immutable
-private final UserRepository userRepository;
-private final PasswordEncoder passwordEncoder;
-private final JwtTokenProvider jwtTokenProvider;
-
-// Method-level local variables — exist only during this method call
-public AuthResponse login(LoginRequest request) {
-    User user = userRepository.findByEmail(request.getEmail())
-                              .orElseThrow(...);          // local variable
-
-    LocalDateTime lockUntil = user.getLockedUntil();      // local variable
-
-    if (lockUntil != null && LocalDateTime.now().isBefore(lockUntil)) {
-        throw new BankingException("Account locked", ...);
-    }
-    // lockUntil is garbage collected when method ends
-}
-```
-
-**Result:**
-- `static final` constants → one copy shared, readable across the class
-- `final` instance fields → thread-safe (cannot be changed after construction)
-- Local variables → live only as long as needed, no memory leaks
-
----
-
-### STAR Answer — Strings in the Banking App
-
-**Situation:**
-Strings are used heavily — JWT tokens, account numbers, correlation IDs, SWIFT messages, card number masking, email addresses.
-
-**Task:**
-Use String correctly — immutability, formatting, and manipulation — without performance issues.
-
-**Action:**
-```java
-// 1. String.format() — SWIFT MT103 message builder in PaymentService:
-private String buildSwiftMT103(Payment payment) {
-    return String.format(":20:%s:32A:%s%s%.2f:59:%s",
-            payment.getPaymentReference(),
-            LocalDate.now(),
-            payment.getCurrencyCode(),
-            payment.getAmount(),
-            payment.getReceiverName());
-    // Output: ":20:SWI123:32A:2024-01-15USD500.00:59:Jane Smith"
-}
-
-// 2. String.substring() — card number masking in CardService:
-private String maskCardNumber(String cardNumber) {
-    // "4111111111111111" → "**** **** **** 1111"
-    return "**** **** **** " + cardNumber.substring(cardNumber.length() - 4);
-}
-
-// 3. String.startsWith() — JWT extraction in JwtAuthenticationFilter:
-String bearerToken = request.getHeader("Authorization");
-if (StringUtils.hasText(bearerToken) && bearerToken.startsWith("Bearer ")) {
-    return bearerToken.substring(7); // remove "Bearer " prefix → get raw token
-}
-
-// 4. String concatenation with + in logs (OK for low-frequency):
-log.info("Account created: " + account.getAccountNumber() + " for user: " + userId);
-
-// 5. StringBuilder for building multiple pieces (efficient):
-StringBuilder swiftMsg = new StringBuilder();
-swiftMsg.append(":20:").append(reference)
-        .append(":32A:").append(currency).append(amount)
-        .append(":59:").append(receiverName);
-// StringBuilder is mutable — avoids creating intermediate String objects
-
-// 6. String immutability matters for thread safety:
-private final String JWT_SECRET = "my-secret-key"; // safely shared across threads
-// Strings are immutable — no thread can change the value → naturally thread-safe
-```
-
-**Result:**
-- `String.format()` makes SWIFT message building readable and maintainable
-- `substring()` for card masking protects PCI-DSS compliance (never store full card number)
-- `StringBuilder` in high-frequency loops avoids creating hundreds of temporary String objects
-- Immutability means JWT secret shared across 200 Tomcat threads with zero synchronization
+- Q: What is the difference between primitive and reference types?
+  A: Primitives (`int`, `boolean`, `long`) are stored on the stack, hold the value directly, and cannot be null. Reference types (`String`, `UUID`, `BigDecimal`) are stored on the heap, the variable holds a memory address, and can be null. In our User entity, `failedLoginAttempts` is `int` (always has a value), but `lockedUntil` is `LocalDateTime` (nullable — null means account is not locked).
 
 ---
 
 ## 2. Operators
 
-### STAR Answer — Operators in Our Banking Project
+### Arithmetic, Comparison, Logical, Ternary
 
 **Situation:**
-The banking app needed to perform balance comparisons, calculate fraud scores, check conditions for account locking, and compute loan EMIs.
+We need to calculate EMI for loans, compare balances, apply multiple conditions in fraud detection, and build compact expressions.
 
 **Task:**
-Use Java operators correctly for financial calculations and business logic.
+Use appropriate operators for each calculation, ensuring correctness and readability.
 
 **Action:**
 
 ```java
-// ── ARITHMETIC OPERATORS ─────────────────────────────────────────────────────
-// In TransactionService — balance update:
-// NOT: balance = balance + amount  (double arithmetic — rounding errors)
-// YES: BigDecimal arithmetic — exact
-BigDecimal balanceAfter = currentBalance.subtract(amount);       // -
-BigDecimal balanceAfter = currentBalance.add(amount);            // +
-BigDecimal monthlyRate  = annualRate.divide(
-        BigDecimal.valueOf(1200), 10, RoundingMode.HALF_UP);     // ÷
+// services/loan-service — LoanService.java
+// ARITHMETIC on BigDecimal — cannot use + - * / directly (they are for primitives)
 
-// In FraudEvaluationService — score accumulation:
-double score = 0.0;
-score += 0.30;  // += compound assignment operator
-score += 0.50;
-score = Math.min(score, 1.0); // cap at 1.0
+// EMI = P × r × (1+r)^n / ((1+r)^n - 1)
+BigDecimal monthlyRate = annualRate.divide(BigDecimal.valueOf(1200), 10, RoundingMode.HALF_UP);
+//                       ↑ divide() method — not / operator
+//                       10 = scale (decimal places during calculation)
+//                       HALF_UP = rounding mode
 
-// In CardService — last 4 digits:
-String last4 = String.format("%04d", (int)(Math.random() * 10000));
-// % = modulo (not used directly here but Math.random() * 10000 → 0-9999)
+BigDecimal onePlusR = BigDecimal.ONE.add(monthlyRate);
+//                    ↑ add() method — not + operator
 
-// ── COMPARISON OPERATORS ─────────────────────────────────────────────────────
-// BigDecimal: NEVER use == or != (compares object references, not values)
-// 10.00 == 10.0 → FALSE (different scale, different object)
-// ALWAYS use compareTo():
-if (currentBalance.compareTo(amount) < 0) {      // balance < amount → insufficient funds
+BigDecimal power = onePlusR.pow(months, new MathContext(10));
+BigDecimal numerator = principal.multiply(monthlyRate).multiply(power);
+BigDecimal denominator = power.subtract(BigDecimal.ONE);
+BigDecimal emi = numerator.divide(denominator, 2, RoundingMode.HALF_UP);
+```
+
+```java
+// services/transaction-service — TransactionService.java
+// COMPARISON — NEVER use == for BigDecimal
+BigDecimal currentBalance = accountServiceClient.getBalance(accountId);
+
+// WRONG — compares object references, not values:
+if (currentBalance == amount) { ... }  // always false for different objects
+
+// WRONG — 10.00.equals(10.0) returns false (different scale):
+if (currentBalance.equals(amount)) { ... }
+
+// CORRECT — compareTo returns 0 if equal, negative if less, positive if greater:
+if (currentBalance.compareTo(amount) < 0) {
     throw new InsufficientFundsException(accountId.toString());
-}
-if (currentBalance.compareTo(BigDecimal.ZERO) == 0) {  // balance == 0
-    log.warn("Account has zero balance");
-}
-
-// For primitives == is fine:
-if (user.getFailedLoginAttempts() >= MAX_LOGIN_ATTEMPTS) {  // >= operator
-    user.setStatus(User.UserStatus.LOCKED);
-}
-
-// ── LOGICAL OPERATORS ────────────────────────────────────────────────────────
-// In JwtAuthenticationFilter:
-if (StringUtils.hasText(bearerToken) && bearerToken.startsWith("Bearer ")) {
-    // && = AND: both conditions must be true
-    // Short-circuit: if hasText() is false → startsWith() is NOT evaluated
-}
-
-// In AuthService — account lockout check:
-if (user.getLockedUntil() != null
-        && LocalDateTime.now().isBefore(user.getLockedUntil())) {
-    // != null check FIRST (short-circuit prevents NullPointerException)
-    throw new BankingException("Account locked", ...);
-}
-
-// In ProtectedRoute (frontend TypeScript — same concept):
-if (!isAuthenticated) { redirect to login }
-
-// ── TERNARY OPERATOR ─────────────────────────────────────────────────────────
-// In FraudEvaluationService — risk level:
-FraudScore.FraudRisk risk = score < 0.3  ? FraudScore.FraudRisk.LOW
-                           : score < 0.5  ? FraudScore.FraudRisk.MEDIUM
-                           : score < 0.8  ? FraudScore.FraudRisk.HIGH
-                           : FraudScore.FraudRisk.CRITICAL;
-// Nested ternary: clean for simple multi-value assignment
-
-// In Header.tsx (frontend):
-{unreadCount > 9 ? '9+' : unreadCount}
-// Display '9+' if more than 9, else show actual count
-
-// ── INSTANCEOF OPERATOR ──────────────────────────────────────────────────────
-// In GlobalExceptionHandler — check exception type before casting:
-@ExceptionHandler(Exception.class)
-public ResponseEntity<?> handle(Exception ex) {
-    if (ex instanceof BankingException be) {       // Java 16 pattern matching
-        return ResponseEntity.status(be.getHttpStatus())
-                .body(ApiResponse.error(be.getMessage(), be.getErrorCode()));
-    }
-    return ResponseEntity.status(500)
-            .body(ApiResponse.error("Unexpected error", "INTERNAL_SERVER_ERROR"));
 }
 ```
 
+```java
+// services/fraud-detection-service — FraudEvaluationService.java
+// LOGICAL operators combining multiple fraud rules
+
+if (amount.compareTo(HIGH_VALUE_THRESHOLD) > 0    // AND
+        && transactionCount > MAX_TRANSACTIONS      // AND
+        && isNewIp) {                               // all three true
+    risk = FraudRisk.CRITICAL;
+}
+
+// Short-circuit evaluation: if first condition is false, others not evaluated
+// Saves Redis/database calls when account type disqualifies early
+if (account.getStatus() == AccountStatus.FROZEN
+        || account.getStatus() == AccountStatus.CLOSED) {
+    throw new BankingException("Account not available", ...);
+    // || short-circuits: if FROZEN, never checks CLOSED
+}
+```
+
+```java
+// TERNARY operator — compact conditional expression
+// services/notification-service — NotificationController.java
+String displayCount = unreadCount > 9 ? "9+" : String.valueOf(unreadCount);
+// If unreadCount is 15: shows "9+" (doesn't show exact count > 9)
+// If unreadCount is 5: shows "5"
+
+// Used in fraud risk level determination:
+FraudScore.FraudRisk risk = score < 0.3 ? FraudScore.FraudRisk.LOW
+        : score < 0.5 ? FraudScore.FraudRisk.MEDIUM
+        : score < 0.8 ? FraudScore.FraudRisk.HIGH
+        : FraudScore.FraudRisk.CRITICAL;
+// Nested ternary — readable because each condition builds on the last
+```
+
 **Result:**
-- `compareTo()` for BigDecimal prevents the most common banking bug: wrong money comparison
-- Short-circuit `&&` prevents NullPointerException in null checks
-- Ternary makes fraud scoring readable in one expression instead of 8 lines of if-else
-- Pattern matching `instanceof` eliminates manual casting — cleaner and safer
+- Correct money arithmetic — `BigDecimal.compareTo()` never gives wrong comparison results
+- Short-circuit evaluation avoids unnecessary Redis calls in fraud detection, improving performance
+- Ternary operators keep fraud risk assignment in 4 readable lines instead of 8-line if-else block
+
+**Interview Questions:**
+- Q: Why can't you use `==` to compare strings or BigDecimal?
+  A: "In our banking project, we faced the situation of comparing account balances. `==` compares object references — two different `BigDecimal` objects with the same value like 100.00 would return false with `==` because they are stored at different memory addresses. The task was to correctly compare values. We used `compareTo()` which compares the actual numeric value. The result was correct balance validation — the application never wrongly approved overdrafts."
+
+- Q: What is short-circuit evaluation?
+  A: "In our fraud detection service, we check multiple conditions: high value AND high velocity AND new IP. With `&&`, if the first condition (high value) is false, Java never evaluates the others. This is short-circuit evaluation. The benefit: we saved Redis calls for velocity checking on transactions that clearly were not high-value — improving performance by 30% on low-risk transactions."
 
 ---
 
 ## 3. Control Statements
 
-### STAR Answer — if/else: Account Lockout Logic
+### if/else, switch, for, while, break, continue
 
 **Situation:**
-Our banking app needed to protect user accounts from brute-force password attacks (automated bots trying thousands of passwords).
+The banking app needs branching logic for account lockout, routing payments by rail type, processing lists of accounts, and retrying operations.
 
 **Task:**
-Implement an account lockout system that blocks an account after 5 failed login attempts for 30 minutes.
+Use the right control structure for each scenario — readable, efficient, and correct.
 
 **Action:**
+
 ```java
-// In AuthService.java — login method:
+// services/auth-service — AuthService.java
+// IF-ELSE — account lockout logic (sequential conditions, mutually exclusive)
+
 public AuthResponse login(LoginRequest request) {
+    User user = userRepository.findByEmail(request.getEmail()).orElseThrow(...);
 
-    User user = userRepository.findByEmail(request.getEmail())
-            .orElseThrow(() ->
-                new BankingException("Invalid credentials", "INVALID_CREDENTIALS",
-                        HttpStatus.UNAUTHORIZED));
-
-    // if: is the account currently locked?
+    // if: check most serious condition first
     if (user.getStatus() == User.UserStatus.LOCKED) {
-
-        // nested if: has the lockout period expired?
         if (user.getLockedUntil() != null
                 && LocalDateTime.now().isBefore(user.getLockedUntil())) {
-            throw new BankingException(
-                "Account locked. Try again later.",
-                "ACCOUNT_LOCKED",
-                HttpStatus.FORBIDDEN
-            );
-        } else {
-            // lockout expired — automatically unlock
-            user.setStatus(User.UserStatus.ACTIVE);
-            user.setFailedLoginAttempts(0);
+            // nested if: only locked if within lockout period
+            throw new BankingException("Account locked. Try again later.", "ACCOUNT_LOCKED", HttpStatus.FORBIDDEN);
         }
+        // else implied: lock expired, fall through and reset
+        user.setStatus(User.UserStatus.ACTIVE);
+        user.setFailedLoginAttempts(0);
     }
 
-    // if-else: password check
     if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-        handleFailedLogin(user);  // increment attempt counter
-        throw new BankingException("Invalid credentials", "INVALID_CREDENTIALS",
-                HttpStatus.UNAUTHORIZED);
+        handleFailedLogin(user);   // call extracted method — single responsibility
+        throw new BankingException("Invalid credentials", "INVALID_CREDENTIALS", HttpStatus.UNAUTHORIZED);
     }
 
-    // success path: reset counter
-    user.setFailedLoginAttempts(0);
-    userRepository.save(user);
-
+    // reaching here means: not locked AND correct password
     return generateTokens(user);
 }
-
-private void handleFailedLogin(User user) {
-    user.setFailedLoginAttempts(user.getFailedLoginAttempts() + 1);
-
-    if (user.getFailedLoginAttempts() >= MAX_LOGIN_ATTEMPTS) {
-        user.setStatus(User.UserStatus.LOCKED);
-        user.setLockedUntil(LocalDateTime.now().plusMinutes(30));
-        log.warn("Account LOCKED: {} after {} failed attempts",
-                user.getEmail(), MAX_LOGIN_ATTEMPTS);
-    }
-    userRepository.save(user);
-}
 ```
 
-**Result:**
-After 5 wrong passwords, the account is locked for 30 minutes. A bot trying 1000 passwords per second gets blocked after 5 attempts — preventing brute-force account takeover.
-
----
-
-### STAR Answer — Switch Expression: Payment Rail Routing
-
-**Situation:**
-Our payment-service handles 5 different payment rails (SWIFT, FEDWIRE, CHIPS, ACH, INTERNAL). Each rail has different processing logic, fee structures, and message formats.
-
-**Task:**
-Route each payment to the correct processor based on the payment rail — cleanly and without fall-through bugs.
-
-**Action:**
 ```java
-// In PaymentService.java — routing logic:
-private void processPaymentByRail(Payment payment) {
-    switch (payment.getPaymentRail()) {
-        case SWIFT -> {
-            // Build SWIFT MT103 message
-            String mt103 = buildSwiftMT103(payment);
-            payment.setSwiftMessage(mt103);
-            swiftGateway.submit(mt103);
-            log.info("SWIFT payment submitted: {}", payment.getPaymentReference());
-        }
-        case FEDWIRE -> {
-            fedwireClient.initiate(payment.getAmount(),
-                    payment.getReceiverAccountNumber(),
-                    payment.getReceiverBankCode());
-        }
-        case ACH -> {
-            achProcessor.scheduleNextDay(payment);
-            // ACH takes 1-3 business days
-        }
-        case CHIPS -> {
-            chipsNetwork.submitSameDay(payment);
-        }
-        case INTERNAL -> {
-            // No external network needed — just update balances
-            internalTransfer(payment);
-        }
-    }
+// services/payment-service — PaymentService.java
+// SWITCH EXPRESSION (Java 14+) — route payment by rail type
+
+// Old switch (error-prone — forget break → fall-through bug):
+String rail;
+switch (payment.getPaymentRail()) {
+    case SWIFT: rail = buildSwiftMT103(payment); break;
+    case ACH:   rail = "ACH_FORMAT"; break;
+    default:    rail = "INTERNAL";
 }
 
-// Switch expression returning a value — for fee calculation:
-BigDecimal feePercent = switch (payment.getPaymentRail()) {
-    case SWIFT    -> new BigDecimal("0.002");   // 0.2% for international
-    case FEDWIRE  -> new BigDecimal("0.001");   // 0.1% for domestic wire
-    case ACH      -> new BigDecimal("0.0005");  // 0.05% for ACH
-    case CHIPS    -> new BigDecimal("0.001");
-    case INTERNAL -> BigDecimal.ZERO;           // free internal transfers
-};
-BigDecimal fee = payment.getAmount().multiply(feePercent);
+// Switch EXPRESSION — what we use (no fall-through, returns value):
+if (payment.getPaymentRail() == Payment.PaymentRail.SWIFT) {
+    payment.setSwiftMessage(buildSwiftMT103(payment));
+}
+// Each rail has unique setup logic — no fall-through risk
 ```
 
-**Result:**
-Switch expressions (Java 14+) prevent the classic fall-through bug of the old switch statement. No `break` needed. The compiler also warns if a case is missing — so if we add a new payment rail enum value, the compiler immediately tells us we forgot to handle it.
-
----
-
-### STAR Answer — For Loop: Outbox Pattern Processing
-
-**Situation:**
-The payment-service uses the Outbox Pattern — payments are saved to the database with `outbox_processed = false`, and a background job must publish them to Kafka.
-
-**Task:**
-Iterate over all unprocessed payments and publish each one to Kafka safely.
-
-**Action:**
 ```java
-// In PaymentService.java — @Scheduled outbox processor:
+// services/payment-service — PaymentService.java
+// FOR-EACH — process all unprocessed outbox payments
+
 @Scheduled(fixedDelay = 5000)
 @Transactional
 public void processOutbox() {
-    // Find all unprocessed payments
     List<Payment> unprocessed = paymentRepository.findByOutboxProcessedFalse();
 
-    // Enhanced for loop (for-each) — cleaner than index-based for
     for (Payment payment : unprocessed) {
+        // Enhanced for loop — cleaner than index-based, no off-by-one errors
         try {
-            // Publish to Kafka
             eventProducer.publishEvent(
-                BankingConstants.TOPIC_PAYMENT_EVENTS,
+                "banking.payment.events",
                 payment.getId().toString(),
                 "PAYMENT_INITIATED:" + payment.getPaymentReference()
-                        + ":" + payment.getPaymentRail()
             );
-            // Mark as processed
             payment.setOutboxProcessed(true);
             paymentRepository.save(payment);
-
-            log.info("Outbox processed: {}", payment.getPaymentReference());
-
         } catch (Exception e) {
-            // Don't let one failure stop the others
-            // This payment will be retried on next scheduler run
-            log.error("Failed to process outbox payment: {} error: {}",
-                    payment.getId(), e.getMessage());
+            log.error("Failed outbox for payment {}: {}", payment.getId(), e.getMessage());
+            // continue to next payment — don't let one failure stop others
+            // no explicit 'continue' needed — loop just moves to next iteration
         }
-    }
-}
-
-// In KafkaConsumerConfig — retry logic uses traditional for loop:
-for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-        processEvent(event);
-        break; // success → exit loop
-    } catch (Exception e) {
-        if (attempt == MAX_RETRIES) {
-            sendToDlq(event, e); // final attempt failed → DLQ
-        }
-        Thread.sleep(1000L * attempt); // exponential backoff: 1s, 2s, 3s
     }
 }
 ```
 
+```java
+// services/kafka-lib — KafkaConsumerConfig.java
+// The concept of RETRY LOOP in error handling config
+
+// FixedBackOff(1000L, 3) — internally implements:
+// attempt = 1
+// while (attempt <= maxAttempts) {
+//     try { processMessage(); break; }
+//     catch (Exception e) {
+//         if (attempt == maxAttempts) sendToDLQ();
+//         Thread.sleep(1000); // wait between retries
+//         attempt++;
+//     }
+// }
+DefaultErrorHandler errorHandler = new DefaultErrorHandler(
+    new FixedBackOff(1000L, 3) // 3 retries, 1 second between each
+);
+```
+
+```java
+// Pagination with WHILE-style logic (Spring Batch)
+// report-service — StatementJobConfig.java
+
+// Spring Batch's chunk processing conceptually does:
+// while (reader.hasNext()) {
+//     List chunk = read(100 items);  // READ
+//     process(chunk);                // PROCESS
+//     write(chunk);                  // WRITE
+// }
+// We configure chunk size = 100: never loads all 10,000 transactions at once
+```
+
 **Result:**
-The for-each loop processes each payment independently — one failure doesn't stop the others. With the traditional for loop, the retry logic with exponential backoff gives Kafka time to recover from transient issues before sending the message to the DLQ.
+- Account lockout properly handles expired locks — users aren't permanently locked out
+- For-each loop processes each outbox payment independently — one failure doesn't stop the batch
+- Retry loop in Kafka config handles transient failures (network blips) without losing messages
+
+**Interview Questions:**
+- Q: What is the difference between `for`, `for-each`, and `while`?
+  A: "In our banking project: we used `for-each` in the outbox processor to iterate over unprocessed payments — cleaner, no index variable, no off-by-one errors. We would use a traditional `for(int i=0; i<n; i++)` if we needed the index. We use `while` conceptually through Spring Batch's chunk processing — keep reading until no more transactions. The choice depends on whether you need the index, whether the collection size is known, and whether you need an exit condition based on state."
+
+- Q: Can you give an example of when to use switch over if-else?
+  A: "In our payment service, we route payments by rail type: SWIFT, ACH, FEDWIRE, CHIPS, INTERNAL. Each case is mutually exclusive with no overlapping conditions. Switch expression is perfect here — each case maps to exactly one handler, no fall-through risk, and the compiler can warn if we miss a case. We use if-else for account lockout because the conditions are sequential and related — checking lock status before checking password."
 
 ---
 
 ## 4. Arrays
 
-### STAR Answer — Arrays in Fraud Detection
+### When and How We Use Arrays
 
 **Situation:**
-When the fraud detection service evaluates a transaction, it can flag it for multiple reasons simultaneously (high value AND new IP address AND high velocity). We need to return all reasons together.
+Most of our collections are dynamic — we don't know the size upfront. But some data is fixed-size and benefits from arrays.
 
 **Task:**
-Store and return multiple fraud detection reasons for a single transaction evaluation.
+Use arrays where size is fixed and known; use collections where size is dynamic.
 
 **Action:**
+
 ```java
-// In FraudScore model — array field:
+// services/fraud-detection-service — FraudScore.java
+// Array for fraud reasons — fixed set of strings attached to a score
+
 @Data
 @Builder
 public class FraudScore {
     private String transactionId;
     private double score;
     private FraudRisk riskLevel;
-    private String[] reasons;      // array of reason codes
-    private LocalDateTime evaluatedAt;
+    private String[] reasons;   // ← array of reason strings
+    // Why array here, not List?
+    // FraudScore is immutable after creation — reasons don't change
+    // Array is slightly more memory efficient for small fixed-size collections
+    // JSON serialization produces cleaner output: ["HIGH_VALUE", "HIGH_VELOCITY"]
 }
 
-// In FraudEvaluationService — building the reasons array:
-public FraudScore evaluate(String transactionId, String userId,
-                            BigDecimal amount, String ip) {
-    double score = 0.0;
-    List<String> reasons = new ArrayList<>();  // List first — dynamic size
+// Building the array:
+List<String> reasonsList = new ArrayList<>();
+if (amount.compareTo(HIGH_VALUE_THRESHOLD) > 0) {
+    reasonsList.add("HIGH_VALUE_TRANSACTION");
+}
+if (transactionCount > MAX_TRANSACTIONS_PER_HOUR) {
+    reasonsList.add("HIGH_VELOCITY");
+}
+if (isNewIp) {
+    reasonsList.add("NEW_IP_ADDRESS");
+}
+// Convert List to array when building the immutable FraudScore:
+FraudScore.builder()
+    .reasons(reasonsList.toArray(new String[0]))
+    //        ↑ toArray(new String[0]) — idiomatic Java conversion
+    .build();
+```
 
-    if (amount.compareTo(HIGH_VALUE_THRESHOLD) > 0) {
-        score += 0.3;
-        reasons.add("HIGH_VALUE_TRANSACTION");
-    }
+```java
+// shared/kafka-lib — KafkaProducerConfig.java
+// Arrays in configuration maps
 
-    Long txnCount = redisTemplate.opsForValue().increment("fraud:velocity:" + userId);
-    if (txnCount != null && txnCount > MAX_TRANSACTIONS_PER_HOUR) {
-        score += 0.5;
-        reasons.add("HIGH_VELOCITY");
-    }
+Map<String, Object> config = new HashMap<>();
+// Under the hood, Kafka bootstrap servers can be multiple:
+// "localhost:9092,kafka2:9092,kafka3:9092"
+// Kafka client splits by comma → String[] internally
+config.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+```
 
-    Boolean isNewIp = redisTemplate.opsForValue()
-            .setIfAbsent("fraud:ip:" + userId + ":" + ip, "1", 30, TimeUnit.DAYS);
-    if (Boolean.TRUE.equals(isNewIp)) {
-        score += 0.1;
-        reasons.add("NEW_IP_ADDRESS");
-    }
+```java
+// services/api-gateway — AuthenticationFilter.java
+// List.of() — fixed-size, array-backed list for public paths
 
-    // Convert List → array for the final result:
-    return FraudScore.builder()
-            .transactionId(transactionId)
-            .score(Math.min(score, 1.0))
-            .riskLevel(determineRisk(score))
-            .reasons(reasons.toArray(new String[0]))  // List → String[]
+private static final List<String> PUBLIC_PATHS = List.of(
+    "/api/v1/auth/login",
+    "/api/v1/auth/register",
+    "/api/v1/auth/refresh",
+    "/actuator",
+    "/swagger-ui",
+    "/v3/api-docs"
+);
+// List.of() internally backed by an array — immutable, fixed size
+// Perfect for a static set of paths that never changes
+```
+
+```java
+// Varargs (variable-length arguments) — internally an array:
+// ApiResponse uses static factory methods:
+public static <T> ApiResponse<T> error(String message, String errorCode) {
+    // internally Java creates: String[] args = new String[]{message, errorCode}
+    return ApiResponse.<T>builder()
+            .success(false)
+            .message(message)
+            .errorCode(errorCode)
             .build();
 }
 ```
 
 **Result:**
-A single transaction gets scored with ALL applicable fraud reasons simultaneously. The `reasons` array in the result tells the operations team exactly WHY a transaction was flagged — making it easy to review and act on.
+- `String[] reasons` in FraudScore creates a clean, immutable structure — after fraud evaluation, reasons cannot accidentally be modified
+- `List.of()` for public paths creates a memory-efficient, thread-safe constant that's checked thousands of times per second in the Gateway filter
 
-**Array vs List — why we start with List then convert:**
-```java
-// Array has fixed size — you must know the size upfront:
-String[] reasons = new String[3]; // what if we have 2 reasons? 4 reasons?
-reasons[0] = "HIGH_VALUE";
-// Wasteful — guessing the size
+**Interview Questions:**
+- Q: What is the difference between an array and a List?
+  A: "In our project, we use both. `String[] reasons` in FraudScore is an array — fixed size, created once, never modified. `List<Payment>` in the outbox processor is dynamic — we don't know how many unprocessed payments there will be. Arrays are faster for indexed access and use less memory. Lists are flexible — you can add/remove elements. We chose arrays where data is fixed at creation, Lists where data grows dynamically."
 
-// List is dynamic — grows as needed:
-List<String> reasons = new ArrayList<>();
-reasons.add("HIGH_VALUE");
-reasons.add("HIGH_VELOCITY");  // can add as many as needed
-
-// Convert to array at the end (API uses String[]):
-reasons.toArray(new String[0])
-```
+- Q: What is `toArray(new String[0])`?
+  A: "In our fraud detection service, we accumulate reasons in a List as we evaluate rules, then convert to array for the immutable FraudScore. `toArray(new String[0])` is the idiom — the `new String[0]` tells Java the target type. Passing size 0 is actually faster than passing the correct size in modern JVMs because of how the JVM handles array allocation internally."
 
 ---
 
-## 5. Wrapper Classes
+## 5. Strings
 
-### STAR Answer — Wrapper Classes in Our Project
+### String Operations Throughout the Project
 
 **Situation:**
-Java generics (`List<T>`, `Optional<T>`, `Map<K,V>`) only work with objects — not primitives. Our banking code frequently switches between primitive values and their object equivalents.
+Strings are used everywhere — for account numbers, email addresses, JWT tokens, Kafka event payloads, SWIFT messages, error codes. Each use case requires different operations.
 
 **Task:**
-Use wrapper classes correctly — especially for null-safe Redis operations and Kafka configuration.
+Use the right String operations — efficient, correct, and secure (never log sensitive strings like passwords or tokens).
 
 **Action:**
+
 ```java
-// ── Integer.MAX_VALUE in Kafka Producer Config ──────────────────────────────
-// In KafkaProducerConfig.java:
-config.put(ProducerConfig.RETRIES_CONFIG, Integer.MAX_VALUE);
-// = 2,147,483,647 retries — effectively "retry forever"
-// Used because with idempotent producer, infinite retries are safe
-// Can't use int.MAX_VALUE — Map.put() requires Object, not primitive
+// services/payment-service — PaymentService.java
+// String.format() — building SWIFT MT103 payment message
 
-// ── Boolean.TRUE.equals() — null-safe Redis check ──────────────────────────
-// In AuthenticationFilter.java:
-Boolean isBlacklisted = redisTemplate.hasKey("blacklist:" + token);
-// hasKey() returns Boolean (wrapper) — could be null if Redis connection fails
-
-// WRONG — NullPointerException if Redis returns null:
-if (isBlacklisted == true) { ... }
-
-// CORRECT — Boolean.TRUE.equals() handles null gracefully:
-if (Boolean.TRUE.equals(isBlacklisted)) {
-    return unauthorized(exchange);
+private String buildSwiftMT103(Payment payment) {
+    return String.format(
+        ":20:%s:32A:%s%s%.2f:59:%s",
+        payment.getPaymentReference(),     // %s = string substitution
+        java.time.LocalDate.now(),          // %s = date as string
+        payment.getCurrencyCode(),          // %s = "USD"
+        payment.getAmount(),                // %.2f = float with 2 decimal places
+        payment.getReceiverName()           // %s = string
+    );
+    // Result: ":20:SWI1234567890:32A:2024-01-15USD5000.00:59:Jane Smith"
 }
-// Boolean.TRUE.equals(null) → false (no NPE)
-// Boolean.TRUE.equals(Boolean.FALSE) → false
-// Boolean.TRUE.equals(Boolean.TRUE) → true
+```
 
-// ── Autoboxing and Unboxing ─────────────────────────────────────────────────
-// Autoboxing: primitive → wrapper (automatic)
-int attempts = 5;
-Integer attemptsObj = attempts;  // auto-boxed: new Integer(5)
-Map<String, Integer> config = new HashMap<>();
-config.put("maxAttempts", 5);    // 5 (int) auto-boxed to Integer
+```java
+// services/account-service — AccountService.java
+// String concatenation for account number generation
 
-// Unboxing: wrapper → primitive (automatic)
-int maxAttempts = config.get("maxAttempts");  // Integer → int unboxing
+private String generateAccountNumber() {
+    return "ACC" + System.currentTimeMillis() + (int)(Math.random() * 1000);
+    // "ACC" + 1705312800123 + 456 = "ACC1705312800123456"
+    // For frequent concatenation in loops, use StringBuilder:
+}
 
-// Unboxing pitfall — NullPointerException:
-Long count = redisTemplate.opsForValue().increment(velocityKey);
-// count could be null (Redis connection failure)
+// In audit publishing — StringBuilder pattern:
+private String buildAuditMessage(String action, String resource, String userId) {
+    StringBuilder sb = new StringBuilder();
+    sb.append("Action: ").append(action)   // no new String created each time
+      .append(", Resource: ").append(resource)
+      .append(", User: ").append(userId);
+    return sb.toString();
+    // More efficient than: "Action: " + action + ", Resource: " + resource
+    // Each + creates a new String object in the heap
+}
+```
 
-// WRONG:
-if (count > 20) { ... }  // unboxing null → NullPointerException!
+```java
+// services/card-service — CardService.java
+// substring() — masking card number
 
-// CORRECT:
-if (count != null && count > MAX_TRANSACTIONS_PER_HOUR) { ... }
-// Check null BEFORE unboxing
+private String maskCardNumber(String fullCardNumber) {
+    // fullCardNumber = "4111111111111234"
+    String lastFour = fullCardNumber.substring(fullCardNumber.length() - 4);
+    // substring(12): chars from index 12 to end = "1234"
+    return "**** **** **** " + lastFour;
+    // result: "**** **** **** 1234"
+}
+```
 
-// ── Long for timestamps and IDs ──────────────────────────────────────────────
-// In JWT claims:
-.setIssuedAt(new Date())
-.setExpiration(new Date(System.currentTimeMillis() + accessTokenExpirationMs))
-// System.currentTimeMillis() returns long (not Long)
-// accessTokenExpirationMs is long (can't use int — milliseconds overflow int range)
-// int max = 2,147,483,647 ms = ~24 days  ← not enough
-// long max = 9,223,372,036,854,775,807 ms = ~292 million years ← plenty
+```java
+// services/auth-service — AuthService.java
+// String.valueOf() — safe null-to-string conversion
+
+// Publishing to Kafka — event payload as String
+eventProducer.publishEvent(
+    BankingConstants.TOPIC_USER_EVENTS,
+    user.getId().toString(),  // UUID.toString() = "550e8400-e29b-41d4-a716-446655440000"
+    "USER_REGISTERED:" + user.getEmail()
+);
+
+// String comparison — always use .equals(), never ==
+if ("ROLE_ADMIN".equals(user.getRole())) {  // literal first avoids NullPointerException
+    // if (user.getRole() == "ROLE_ADMIN") — WRONG: compares references
+    // if (user.getRole().equals("ROLE_ADMIN")) — NPE if getRole() is null
+    // if ("ROLE_ADMIN".equals(user.getRole())) — SAFE: literal can't be null
+}
+```
+
+```java
+// shared/common-utils — BankingConstants.java
+// String interning — constants are string literals (interned in string pool)
+
+public final class BankingConstants {
+    public static final String TOPIC_TRANSACTION_EVENTS = "banking.transaction.events";
+    // String literals are stored in the String Pool (part of heap)
+    // All references to this constant point to the SAME object in the pool
+    // Comparing with == would work for constants but we never rely on this
+}
+```
+
+```java
+// services/api-gateway — AuthenticationFilter.java
+// String.startsWith(), contains(), isEmpty()
+
+String bearerToken = request.getHeader("Authorization");
+// "Authorization: Bearer eyJhbGci..."
+
+if (StringUtils.hasText(bearerToken)          // not null AND not empty AND not blank
+        && bearerToken.startsWith("Bearer ")) {  // starts with this prefix
+    String token = bearerToken.substring(7);     // remove "Bearer " (7 chars)
+}
+
+// String split for multiple origins in CORS:
+// "http://localhost:5173,https://app.bankingapp.com"
+String[] origins = allowedOrigins.split(",");
+// result: ["http://localhost:5173", "https://app.bankingapp.com"]
+```
+
+**String Immutability — Why It Matters:**
+```java
+// Strings are IMMUTABLE — every operation creates a NEW String
+String token = "eyJhbGci...";
+String upper = token.toUpperCase(); // new String created, original unchanged
+// token is still "eyJhbGci..." — not modified
+
+// This is why StringBuilder exists:
+// Bad for 1000 concatenations in a loop:
+String result = "";
+for (Payment p : payments) {
+    result += p.getReference() + "
+";  // creates 1000 intermediate String objects
+}
+
+// Good:
+StringBuilder sb = new StringBuilder();
+for (Payment p : payments) {
+    sb.append(p.getReference()).append("
+");  // reuses same buffer
+}
+String result = sb.toString();  // one final String
 ```
 
 **Result:**
-- `Integer.MAX_VALUE` makes Kafka retry "forever" safely — using plain `int max` in the config `Map<String,Object>` would fail compilation
-- `Boolean.TRUE.equals()` prevents production crashes when Redis has connection issues
-- Correct use of `long` for timestamps prevents overflow that would corrupt JWT expiry dates
+- `String.format()` for SWIFT messages produces valid MT103 format without manual string building errors
+- Card masking with `substring()` ensures PCI compliance — card numbers never stored or logged in full
+- "literal".equals(variable) pattern prevents NullPointerExceptions in auth checks
+
+**Interview Questions:**
+- Q: Why is String immutable in Java?
+  A: "In our banking project, JWT tokens, account numbers, and payment references are Strings. Immutability is critical for security — if Strings were mutable, a token could be modified after validation but before use. It also enables the String Pool — JVM stores one copy of each literal. Multiple references to `BankingConstants.TOPIC_TRANSACTION_EVENTS` all point to the same object in memory. Thread safety is another benefit — immutable objects can be shared across threads without synchronization."
+
+- Q: What is String Pool?
+  A: "String literals in Java are stored in a special area of memory called the String Pool. When we write `public static final String TOPIC = 'banking.transaction.events'` in BankingConstants, that string is stored once in the pool. Every service that references this constant gets a reference to the same pool object — no duplicate copies. `String.intern()` can force a heap string into the pool, but we don't need to call it explicitly for literals."
+
+- Q: StringBuilder vs String concatenation?
+  A: "In our outbox processor, if we built a log message by concatenating payment reference, status, and timestamp using `+` in a loop, each `+` creates a new intermediate String. For 100 payments, that's 100 temporary Strings on the heap — garbage collector pressure. With StringBuilder, we have one buffer that grows. We use `String.format()` for one-time formatted strings like the SWIFT message, and StringBuilder for building strings in loops."
 
 ---
+
+## 6. Wrapper Classes
+
+### Autoboxing, Unboxing, Null Safety
+
+**Situation:**
+Java generics (like `List`, `Map`) only work with objects, not primitives. We need to box primitives into their wrapper types while being careful about null handling.
+
+**Task:**
+Use wrapper classes correctly — avoiding NullPointerExceptions from unboxing and using them correctly in collections.
+
+**Action:**
+
+```java
+// shared/kafka-lib — KafkaProducerConfig.java
+// Integer.MAX_VALUE — wrapper class constant for Kafka retry config
+
+config.put(ProducerConfig.RETRIES_CONFIG, Integer.MAX_VALUE);
+// Integer.MAX_VALUE = 2,147,483,647 — effectively "retry forever"
+// Why not int max? Because Map<String, Object> needs Object, not int
+// autoboxing: Integer.MAX_VALUE (int literal) → Integer object automatically
+```
+
+```java
+// services/fraud-detection-service — FraudEvaluationService.java
+// NULL-SAFE check with wrapper class
+
+Long txnCount = redisTemplate.opsForValue().increment(velocityKey);
+// Returns Long (wrapper) not long (primitive) because Redis operation can fail/return null
+
+// DANGEROUS — NullPointerException if Redis is down:
+if (txnCount > MAX_TRANSACTIONS_PER_HOUR) { ... }
+// txnCount (Long) unboxed to long — throws NPE if txnCount is null
+
+// SAFE — null check first:
+if (txnCount != null && txnCount > MAX_TRANSACTIONS_PER_HOUR) {
+    score += 0.5;
+}
+// Short-circuit: if null, second condition not evaluated
+
+// Same pattern in Redis boolean check:
+Boolean isBlacklisted = redisTemplate.hasKey("blacklist:" + token);
+// Returns Boolean (nullable), not boolean
+
+if (Boolean.TRUE.equals(isBlacklisted)) {
+    // Boolean.TRUE.equals(null) returns false — safe
+    // isBlacklisted.equals(Boolean.TRUE) — NPE if null
+}
+```
+
+```java
+// services/account-service — AccountService.java
+// Autoboxing in collections
+
+List<UUID> accountIds = new ArrayList<>();
+accountIds.add(account.getId()); // UUID is already an object — no boxing needed
+
+// Autoboxing example — int to Integer:
+Map<String, Integer> failureCount = new HashMap<>();
+failureCount.put("account-123", 5);  // 5 (int) autoboxed to Integer(5)
+int count = failureCount.get("account-123"); // Integer unboxed to int
+
+// DANGER — unboxing null:
+Integer count2 = failureCount.get("nonexistent-key"); // returns null
+int primitive = count2; // NullPointerException! null cannot unbox to int
+
+// SAFE:
+int primitive = failureCount.getOrDefault("nonexistent-key", 0); // default 0
+```
+
+**Result:**
+- `Boolean.TRUE.equals(isBlacklisted)` prevents NPE when Redis is temporarily unavailable — the check safely returns false, the gateway doesn't crash
+- `Integer.MAX_VALUE` in Kafka retry config correctly places a large integer into the Map<String, Object> without manual boxing
+
+**Interview Questions:**
+- Q: What is autoboxing and unboxing?
+  A: "In our Kafka producer config, we put `Integer.MAX_VALUE` into a `Map<String, Object>`. The map requires Object, not int. Java automatically converts int to Integer — this is autoboxing. When we call `.intValue()` or use it in an arithmetic expression, Java converts Integer back to int — unboxing. The risk is unboxing null — if the map returns null and we unbox it to int, we get a NullPointerException. In our fraud detection service, we use `if (txnCount != null && txnCount > 20)` to safely handle the nullable Long from Redis."
+
+- Q: What are wrapper class constants?
+  A: "Wrapper classes have useful constants: `Integer.MAX_VALUE` (2,147,483,647), `Integer.MIN_VALUE`, `Long.MAX_VALUE`, `Double.NaN`, `Boolean.TRUE`, `Boolean.FALSE`. We use `Integer.MAX_VALUE` for Kafka retries — effectively infinite retries. We use `Boolean.TRUE.equals()` instead of `== true` for null-safe comparison of nullable Boolean from Redis operations."
