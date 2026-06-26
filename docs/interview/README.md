@@ -1,38 +1,35 @@
-# Interview Preparation — Banking Project
+# Interview Preparation — Complete Guide
 
-Every concept explained using the **STAR method**:
-- **S**ituation — the problem we faced in the banking project
-- **T**ask — what needed to be decided or built
-- **A**ction — exactly what we implemented and how (with real code)
-- **R**esult — what it achieved, why it was the right choice
+Every concept mapped to your banking project using the STAR method:
+- **S**ituation — the problem we faced
+- **T**ask — what needed to be done
+- **A**ction — exact code we wrote
+- **R**esult — what it achieved and why it matters
 
 ## Modules
 
-| # | Module | Topics |
+| # | Module | File |
 |---|---|---|
-| 01 | [Core Java Fundamentals](./01-core-java.md) | Variables, Operators, Control Statements, Arrays, Strings, Wrapper Classes |
-| 02 | [OOP — Object Oriented Programming](./02-oop.md) | Classes, Encapsulation, Inheritance, Polymorphism, Abstraction, Interfaces, Enums |
-| 03 | [Exception Handling](./03-exception-handling.md) | Custom Exceptions, try-catch-finally, @RestControllerAdvice, Checked vs Unchecked |
-| 04 | [Collections Framework](./04-collections.md) | List, Set, Map, Queue, Comparators, Sorting |
-| 05 | [Generics](./05-generics.md) | Generic Classes, Bounded Types, Wildcards, Type Erasure |
-| 06 | [Functional Programming](./06-functional.md) | Lambdas, Streams, Optional, Method References, Functional Interfaces |
-| 07 | [Multithreading & Concurrency](./07-multithreading.md) | Thread Pool, @Async, CompletableFuture, ThreadLocal, AtomicLong, Kafka Threads |
-| 08 | [Modern Java (8–17)](./08-modern-java.md) | var, Text Blocks, Switch Expressions, Records, Pattern Matching |
-| 09 | [Spring Boot](./09-spring-boot.md) | IoC, DI, Auto-config, @Transactional, @Cacheable, @Scheduled, Profiles |
-| 10 | [Spring Security](./10-spring-security.md) | JWT, SecurityFilterChain, BCrypt, @PreAuthorize, CORS, Stateless |
-| 11 | [Spring Data JPA](./11-spring-data-jpa.md) | Entity Mapping, Repository, Flyway, Pagination, Auditing, N+1 Problem |
-| 12 | [Spring Cloud & Microservices](./12-spring-cloud.md) | Eureka, Config Server, Gateway, Feign, Circuit Breaker, LoadBalancer |
-| 13 | [Apache Kafka](./13-kafka.md) | Producer, Consumer, Topics, Outbox Pattern, DLQ, Avro, Schema Registry |
-| 14 | [Design Patterns](./14-design-patterns.md) | Singleton, Builder, Factory, Repository, Proxy, Observer, Saga, Circuit Breaker |
+| 1 | Core Java Fundamentals | [01-core-java.md](./01-core-java.md) |
+| 2 | Object-Oriented Programming | [02-oop.md](./02-oop.md) |
+| 3 | Exception Handling | [03-exception-handling.md](./03-exception-handling.md) |
+| 4 | Collections Framework | [04-collections.md](./04-collections.md) |
+| 5 | Generics | [05-generics.md](./05-generics.md) |
+| 6 | Functional Programming | [06-functional.md](./06-functional.md) |
+| 7 | Multithreading & Concurrency | [07-multithreading.md](./07-multithreading.md) |
+| 8 | Modern Java (8–17) | [08-modern-java.md](./08-modern-java.md) |
+| 9 | Spring Boot | [09-spring-boot.md](./09-spring-boot.md) |
+| 10 | Spring Security | [10-spring-security.md](./10-spring-security.md) |
+| 11 | Spring Data JPA & Hibernate | [11-spring-data-jpa.md](./11-spring-data-jpa.md) |
+| 12 | Spring Cloud & Microservices | [12-spring-cloud.md](./12-spring-cloud.md) |
+| 13 | Apache Kafka | [13-kafka.md](./13-kafka.md) |
+| 14 | Design Patterns | [14-design-patterns.md](./14-design-patterns.md) |
 
-## How to Use This for Interviews
+## How to Use This During Interview Prep
 
-Each section has:
-1. **Concept** — what it is in simple words
-2. **STAR Answer** — ready-made interview answer
-3. **Code** — the exact code from your project
-4. **Follow-up Questions** — what interviewers ask next
+1. Read the **Situation** — understand WHY the concept exists
+2. Read the **Action** — understand the exact code we wrote
+3. Read the **Interview Questions** — practice answering in your own words
+4. Connect every answer back to the banking project — real examples beat textbook answers
 
-When asked a question, say:
-*"In our banking microservices project, we faced [Situation]..."*
-and follow the STAR structure.
+> "In my banking project, we had a situation where..." is far stronger than a generic answer.
