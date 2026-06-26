@@ -1,271 +1,258 @@
-# Module 02 — OOP: Object-Oriented Programming
+# Module 2 — Object-Oriented Programming (OOP)
 
 ---
 
-## 1. Classes & Objects
-
-### STAR Answer
+## 1. Classes and Objects
 
 **Situation:**
-Our banking project needed to model real-world banking concepts — accounts, transactions, payments, users, cards, loans — and pass them between controllers, services, databases, and Kafka events.
+We need to model real banking entities — accounts, transactions, users, cards, loans. Each entity has data (fields) and behavior (methods).
 
 **Task:**
-Design Java classes that accurately represent each banking concept, with proper data, behaviour, and encapsulation.
+Create well-structured classes that represent banking concepts, with clear separation between data (entities), business logic (services), and communication (DTOs).
 
 **Action:**
+
 ```java
-// Entity class — maps to a database table, represents a real concept:
+// Three types of classes in our project:
+
+// 1. ENTITY — maps to a database table, has an ID
+// services/account-service — Account.java
 @Entity
 @Table(name = "accounts")
-@Data @Builder @NoArgsConstructor @AllArgsConstructor
 public class Account {
-    // State (what an account HAS):
-    private UUID id;
-    private String accountNumber;
-    private UUID userId;
+    @Id
+    private UUID id;              // identity
+    private UUID userId;          // which user owns this
     private AccountType accountType;
-    private BigDecimal balance;
+    private BigDecimal balance;   // state
     private AccountStatus status;
 
-    // Behavior (what an account KNOWS how to do) is in AccountService
-    // Entities = pure data, no business logic
+    // Behavior through enums inside the class
+    public enum AccountType { CHECKING, SAVINGS, INVESTMENT }
+    public enum AccountStatus { ACTIVE, INACTIVE, FROZEN, CLOSED }
 }
 
-// Service class — contains behavior:
-@Service
-@RequiredArgsConstructor
-public class AccountService {
-    // Behavior (what the system can DO with accounts):
-    public Account createAccount(UUID userId, AccountType type, String currency) { ... }
-    public Account getAccountById(UUID accountId) { ... }
-    public Account updateBalance(UUID accountId, BigDecimal amount) { ... }
-    public Account freezeAccount(UUID accountId) { ... }
-}
-
-// DTO class — transfers data between layers (no database mapping):
+// 2. DTO (Data Transfer Object) — carries data between layers, no database mapping
+// services/auth-service — LoginRequest.java
 @Data
-public class RegisterRequest {
+public class LoginRequest {
+    // Only has data, no business logic
     private String email;
     private String password;
-    private String firstName;
-    private String lastName;
-    // Only the fields the user sends — no id, no createdAt
+    private String mfaCode;
+    // No @Entity, no @Id — never saved to database directly
 }
 
-// Objects are created from classes:
-Account account = Account.builder()
-        .userId(userId)
-        .accountType(AccountType.CHECKING)
-        .balance(BigDecimal.ZERO)
-        .status(AccountStatus.ACTIVE)
-        .build();
-// 'account' is an object — a specific instance of the Account class
+// 3. SERVICE — contains business logic, stateless (no instance variables storing state)
+// services/auth-service — AuthService.java
+@Service
+@RequiredArgsConstructor
+public class AuthService {
+    // Dependencies injected (not created here)
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+
+    // Methods = behavior
+    public AuthResponse login(LoginRequest request) { ... }
+    public AuthResponse register(RegisterRequest request) { ... }
+    public void logout(String token, String userId) { ... }
+}
 ```
 
 **Result:**
-Clear separation: Entity classes model data, Service classes model behaviour, DTO classes model API contracts. Every team member knows exactly which class to look in for what.
+- Clear separation: entities know nothing about HTTP, DTOs know nothing about the database, services contain all the logic — each class has one responsibility
+
+**Interview Questions:**
+- Q: What is the difference between a class and an object?
+  A: "In our banking project, `Account` is a class — it's a blueprint describing what an account looks like: it has a balance, an account type, a status. When a customer opens a new account, we create an object: `Account account = Account.builder().userId(userId).balance(BigDecimal.ZERO).build()`. That specific object with specific values is an instance of the Account class. We can have thousands of Account objects at runtime, all from the same Account class blueprint."
 
 ---
 
 ## 2. Encapsulation
 
-### STAR Answer
-
 **Situation:**
-In our banking app, sensitive data like passwords, JWT secrets, card PIN hashes, and account balances must never be directly accessible or modifiable from outside their class. If any code could directly set `user.password = "hacked"`, security would collapse.
+Sensitive data like password hashes, JWT secrets, and card numbers must not be directly accessible. Business rules (like "balance cannot go negative") must be enforced consistently.
 
 **Task:**
-Ensure that internal data is protected. No external code can directly access or modify sensitive fields without going through validated, controlled methods.
+Hide implementation details and protect data through access modifiers and controlled access.
 
 **Action:**
+
 ```java
-// In User entity — fields are private, access only through methods:
+// services/auth-service — User.java
 @Entity
 public class User {
     @Id
     private UUID id;
 
-    @Column(unique = true, nullable = false)
     private String email;
 
-    @Column(nullable = false)
-    private String password;    // stores BCrypt hash, never plaintext
+    private String password;        // PRIVATE — never expose the hash directly
+    // No getPassword() in the controller — only passwordEncoder.matches() sees it
 
-    private User.UserStatus status;
-    private int failedLoginAttempts;
+    private int failedLoginAttempts; // PRIVATE — only AuthService controls this
     private LocalDateTime lockedUntil;
 
-    // Lombok @Data generates getters AND setters
-    // But we control WHICH setters are called and WHERE
+    // The getter exists but updating is controlled through service methods:
+    // User.setFailedLoginAttempts() is package-private in production best practice
 }
 
-// In AuthService — the ONLY place that touches password:
-@Service
-public class AuthService {
-    private final PasswordEncoder passwordEncoder;
-
-    public AuthResponse register(RegisterRequest request) {
-        User user = User.builder()
-                // Password is ALWAYS hashed before storage
-                // No other code can bypass this — it goes through this service
-                .password(passwordEncoder.encode(request.getPassword()))
-                .build();
-        userRepository.save(user);
+// services/auth-service — AuthService.java
+// Encapsulation of lockout LOGIC — enforced in one place
+private void handleFailedLogin(User user) {
+    user.setFailedLoginAttempts(user.getFailedLoginAttempts() + 1);
+    if (user.getFailedLoginAttempts() >= MAX_LOGIN_ATTEMPTS) {
+        user.setStatus(User.UserStatus.LOCKED);
+        user.setLockedUntil(LocalDateTime.now().plusMinutes(30));
     }
-
-    public AuthResponse login(LoginRequest request) {
-        // Password is ALWAYS compared via BCrypt — never stored/logged plaintext
-        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            throw new BankingException("Invalid credentials", ...);
-        }
-    }
+    userRepository.save(user);
 }
+// No other code can lock an account — ONLY through this method
+// This is encapsulation of business rules
 
-// In JwtTokenProvider — secret key is encapsulated:
+// shared/security-lib — JwtTokenProvider.java
 @Component
 public class JwtTokenProvider {
     @Value("${banking.jwt.secret}")
-    private String jwtSecret;   // private — nobody outside can access this
+    private String jwtSecret;  // PRIVATE — no other class can see the secret
 
-    // Only this class creates/validates tokens using the secret
+    // PRIVATE method — only used internally
     private Key getSigningKey() {
         return Keys.hmacShaKeyFor(jwtSecret.getBytes());
-        // The Key object is created fresh each time — never exposed
     }
 
-    // Public interface — other classes call these, never access the secret directly:
-    public String generateAccessToken(String userId, String email, List<String> roles) { ... }
-    public boolean validateToken(String token) { ... }
-    public String extractUserId(String token) { ... }
+    // PUBLIC method — controlled interface for token generation
+    public String generateAccessToken(String userId, String email, List<String> roles) {
+        return Jwts.builder()
+                .setSubject(userId)
+                .signWith(getSigningKey(), SignatureAlgorithm.HS512) // uses private method
+                .compact();
+    }
 }
 ```
 
 **Result:**
-Even if a developer accidentally writes code that tries to set a password directly, the architecture forces them to go through `AuthService.register()` — which always hashes it. The JWT secret is never accessible outside `JwtTokenProvider`. This is enforced by design, not just convention.
+- The JWT secret is never exposed — `private String jwtSecret` with `private getSigningKey()` ensures only `JwtTokenProvider` can create valid tokens
+- Account lockout is always applied consistently — no other code can change `failedLoginAttempts` without going through `handleFailedLogin()`
+
+**Interview Questions:**
+- Q: What is encapsulation and why is it important?
+  A: "In our auth service, we face a security situation: the JWT signing secret must never be exposed. The task was to ensure only the token provider can create tokens. We made `jwtSecret` private and `getSigningKey()` private — no external class can access them. The result: even if another service is compromised, it cannot forge JWT tokens because it cannot access the signing key. This is encapsulation — hiding implementation details behind a controlled interface."
 
 ---
 
 ## 3. Inheritance
 
-### STAR Answer
-
 **Situation:**
-Our banking app throws many types of exceptions — resource not found, insufficient funds, account locked, service unavailable, validation failed. Each has a different HTTP status code and error code. Without a hierarchy, we'd write duplicate error-handling code for every exception type.
+Different exception types (resource not found, insufficient funds, account locked) all need HTTP status codes and error codes. Writing this logic in every exception class would violate DRY principle.
 
 **Task:**
-Create an exception hierarchy so all banking exceptions share common behaviour (HTTP status, error code) while each type can add specific details.
+Create a hierarchy where common behavior lives in the parent class and specific behavior lives in child classes.
 
 **Action:**
+
 ```java
-// BASE CLASS — defines the common structure all banking exceptions share:
+// shared/common-utils — Exception Hierarchy
+
+// PARENT — base banking exception with all common fields
 public class BankingException extends RuntimeException {
-    // These fields are common to ALL banking exceptions:
-    private final String errorCode;      // "INSUFFICIENT_FUNDS", "ACCOUNT_LOCKED", etc.
+    private final String errorCode;      // "INSUFFICIENT_FUNDS", "ACCOUNT_LOCKED"
     private final HttpStatus httpStatus; // 400, 401, 403, 404, 422, 503
 
-    // Constructor — every subclass must provide these values:
     public BankingException(String message, String errorCode, HttpStatus httpStatus) {
-        super(message);           // calls RuntimeException(message)
+        super(message);  // calls RuntimeException constructor — sets the message
         this.errorCode = errorCode;
         this.httpStatus = httpStatus;
     }
 
-    // With cause — for wrapping lower-level exceptions:
+    // Overloaded constructor for wrapping another exception (exception chaining)
     public BankingException(String message, String errorCode,
                              HttpStatus httpStatus, Throwable cause) {
-        super(message, cause);    // chains the original exception
+        super(message, cause);  // RuntimeException(message, cause)
         this.errorCode = errorCode;
         this.httpStatus = httpStatus;
     }
 }
 
-// SUBCLASS 1 — no extra fields, just specific message and codes:
+// CHILD 1 — specific to "not found" scenario
 public class ResourceNotFoundException extends BankingException {
     public ResourceNotFoundException(String resource, String id) {
         super(
-            String.format("%s not found with id: %s", resource, id),  // message
-            "RESOURCE_NOT_FOUND",           // errorCode
-            HttpStatus.NOT_FOUND            // 404
+            String.format("%s not found with id: %s", resource, id),
+            "RESOURCE_NOT_FOUND",   // specific error code
+            HttpStatus.NOT_FOUND    // specific HTTP status (404)
         );
-        // Calls BankingException constructor automatically
-        // No need to repeat the HTTP status handling logic
+        // inherits: getErrorCode(), getHttpStatus(), getMessage() from parent
     }
 }
 
-// SUBCLASS 2 — specific to money operations:
+// CHILD 2 — specific to "no money" scenario
 public class InsufficientFundsException extends BankingException {
     public InsufficientFundsException(String accountId) {
         super(
             String.format("Insufficient funds in account: %s", accountId),
             "INSUFFICIENT_FUNDS",
-            HttpStatus.UNPROCESSABLE_ENTITY  // 422 — valid request, can't process
+            HttpStatus.UNPROCESSABLE_ENTITY  // 422
         );
     }
 }
 
-// Usage — clean, semantic, consistent:
-// In AccountService:
-Account account = accountRepository.findById(accountId)
-        .orElseThrow(() -> new ResourceNotFoundException("Account", accountId.toString()));
-// Throws 404 with errorCode="RESOURCE_NOT_FOUND"
-
-// In TransactionService:
+// USAGE in TransactionService:
 if (currentBalance.compareTo(amount) < 0) {
     throw new InsufficientFundsException(accountId.toString());
-    // Throws 422 with errorCode="INSUFFICIENT_FUNDS"
+    // GlobalExceptionHandler catches BankingException (parent)
+    // Works for all child exceptions — polymorphism
 }
 
-// In GlobalExceptionHandler — ONE handler catches ALL:
-@ExceptionHandler(BankingException.class)     // catches BankingException AND all subclasses
-public ResponseEntity<ApiResponse<Void>> handleBankingException(BankingException ex) {
-    return ResponseEntity
-            .status(ex.getHttpStatus())       // gets the status from whatever subclass it is
-            .body(ApiResponse.error(ex.getMessage(), ex.getErrorCode()));
-}
+// USAGE in AccountService:
+Account account = accountRepository.findById(accountId)
+        .orElseThrow(() -> new ResourceNotFoundException("Account", accountId.toString()));
 ```
 
 **Result:**
-- `GlobalExceptionHandler` has ONE method that handles ALL banking exceptions through inheritance — not 10 separate handlers
-- Adding a new exception type (e.g., `DailyLimitExceededException`) requires only 5 lines extending `BankingException`
-- Every exception automatically has proper HTTP status, error code, and message formatting
+- `GlobalExceptionHandler` handles `BankingException` and automatically handles all child exceptions
+- Adding a new exception type (`CardExpiredException`) requires only extending `BankingException` — no changes to the handler
+- Every exception automatically has HTTP status and error code — consistent API error responses
+
+**Interview Questions:**
+- Q: What is inheritance? Give an example from your project.
+  A: "In our banking project, we have a situation where we need consistent error responses across 14 microservices. The task was to avoid duplicating HTTP status and error code logic in every exception class. We created `BankingException extends RuntimeException` with `errorCode` and `httpStatus` fields. `ResourceNotFoundException` and `InsufficientFundsException` extend it, each calling `super()` with their specific values. The result: `GlobalExceptionHandler` handles `BankingException` and catches all child exceptions through polymorphism — one handler for the entire exception hierarchy."
+
+- Q: What is method overriding vs overloading?
+  A: "In our `BankingException`, we have two constructors — this is overloading: same constructor name, different parameters. One takes message + errorCode + httpStatus. The other adds a `Throwable cause` for exception chaining when wrapping lower-level exceptions. Overriding is different — it's replacing a parent class method in a child class. We override `doFilterInternal()` from `OncePerRequestFilter` in our `JwtAuthenticationFilter` and `CorrelationIdFilter`. The parent defines the structure, we provide the specific implementation."
 
 ---
 
 ## 4. Polymorphism
 
-### STAR Answer
-
 **Situation:**
-Our `account-service` calls `transaction-service` using Feign (HTTP). But in tests, we can't call real services. And if `transaction-service` is down in production, we need a safe fallback behaviour — not a crash.
+The transaction service calls the account service to check balances. When account-service is down, we need different behavior (fallback) without changing the calling code.
 
 **Task:**
-Write code that works with different implementations of the same interface — the real HTTP client in production, a mock in tests, and a fallback when the service is down.
+Write calling code against an interface so the actual implementation can be swapped without changing the caller.
 
 **Action:**
+
 ```java
-// INTERFACE — defines the CONTRACT (what methods exist):
+// services/transaction-service
+// INTERFACE — the contract (what methods exist)
 @FeignClient(name = "account-service", fallback = AccountServiceClientFallback.class)
 public interface AccountServiceClient {
-    @GetMapping("/api/v1/accounts/{accountId}/balance")
     BigDecimal getBalance(@PathVariable UUID accountId);
-
-    @PatchMapping("/api/v1/accounts/{accountId}/balance")
     void updateBalance(@PathVariable UUID accountId, @RequestParam BigDecimal amount);
 }
 
-// IMPLEMENTATION 1 — Feign generates this at runtime (real HTTP calls):
-// Feign creates a proxy that makes actual HTTP requests to account-service
-// This implementation is invisible in code — Feign generates it
+// IMPLEMENTATION 1 — normal operation (Feign generates this from the interface)
+// Makes HTTP GET to account-service:8083/api/v1/accounts/{id}/balance
 
-// IMPLEMENTATION 2 — Fallback (when account-service is down):
+// IMPLEMENTATION 2 — when account-service is DOWN
 @Component
 public class AccountServiceClientFallback implements AccountServiceClient {
 
-    @Override
+    @Override  // same method signature as interface — polymorphism
     public BigDecimal getBalance(UUID accountId) {
-        // Called automatically when circuit breaker is OPEN or service times out
         throw new BankingException(
-            "Account service temporarily unavailable",
+            "Account service unavailable",
             "SERVICE_UNAVAILABLE",
             HttpStatus.SERVICE_UNAVAILABLE
         );
@@ -273,301 +260,220 @@ public class AccountServiceClientFallback implements AccountServiceClient {
 
     @Override
     public void updateBalance(UUID accountId, BigDecimal amount) {
-        throw new BankingException(
-            "Account service temporarily unavailable",
-            "SERVICE_UNAVAILABLE",
-            HttpStatus.SERVICE_UNAVAILABLE
-        );
+        throw new BankingException("Account service unavailable", ...);
     }
 }
 
-// IMPLEMENTATION 3 — Mock in tests:
-@ExtendWith(MockitoExtension.class)
-class TransactionServiceTest {
-    @Mock
-    AccountServiceClient accountServiceClient;  // Mockito creates a fake implementation
-
-    @Test
-    void debit_sufficientBalance_success() {
-        // Tell the mock what to return:
-        when(accountServiceClient.getBalance(accountId))
-                .thenReturn(new BigDecimal("5000.00"));
-
-        // TransactionService uses AccountServiceClient interface
-        // It doesn't know or care if it's the real Feign client, fallback, or mock
-        Transaction txn = transactionService.debit(accountId, userId,
-                new BigDecimal("100.00"), "Test", "corr-1");
-
-        assertThat(txn.getTransactionType()).isEqualTo(Transaction.TransactionType.DEBIT);
-    }
-}
-
-// TransactionService uses the INTERFACE — polymorphism in action:
+// CALLING CODE — doesn't know which implementation it's getting:
 @Service
 @RequiredArgsConstructor
 public class TransactionService {
     private final AccountServiceClient accountServiceClient;
-    // Type is the interface — same code works with ALL implementations above
+    // Spring injects either the real Feign client or the fallback
+    // TransactionService doesn't know or care which one
 
-    public Transaction debit(UUID accountId, ...) {
+    public Transaction debit(UUID accountId, BigDecimal amount, ...) {
         BigDecimal balance = accountServiceClient.getBalance(accountId);
-        // In production: real Feign HTTP call
-        // In tests: mock returns preset value
-        // When service down: fallback throws SERVICE_UNAVAILABLE
-        // TransactionService code is IDENTICAL in all three cases
+        // Same method call works for both real and fallback implementations
     }
 }
 ```
 
+```java
+// RUNTIME POLYMORPHISM — method overriding
+// shared/security-lib — JwtAuthenticationFilter.java
+
+// Parent class defines the TEMPLATE:
+public abstract class OncePerRequestFilter extends GenericFilterBean {
+    // Template method pattern — defines when to call our method:
+    public final void doFilter(ServletRequest request, ...) {
+        // ... setup code ...
+        doFilterInternal(httpRequest, httpResponse, filterChain); // calls our override
+    }
+
+    // Abstract: MUST be overridden by subclasses
+    protected abstract void doFilterInternal(HttpServletRequest request,
+                                              HttpServletResponse response,
+                                              FilterChain chain);
+}
+
+// Our OVERRIDE — specific behavior for JWT:
+public class JwtAuthenticationFilter extends OncePerRequestFilter {
+    @Override
+    protected void doFilterInternal(HttpServletRequest request,
+                                    HttpServletResponse response,
+                                    FilterChain filterChain) {
+        // Our specific JWT validation logic
+        String jwt = extractJwtFromRequest(request);
+        if (StringUtils.hasText(jwt) && jwtTokenProvider.validateToken(jwt)) {
+            // set authentication...
+        }
+        filterChain.doFilter(request, response);
+    }
+}
+// Spring calls doFilter() on the parent → parent calls our doFilterInternal()
+// The caller uses the parent type, our code runs — polymorphism
+```
+
 **Result:**
-- Production code works with real Feign HTTP calls
-- Same code runs in tests with mocks (no real network needed)
-- Same code degrades gracefully with the fallback when account-service is down
-- No `if (isProd) ... else if (isTest) ...` conditional logic anywhere
+- When account-service fails, Resilience4j switches to `AccountServiceClientFallback` transparently — `TransactionService` code doesn't change
+- Spring Security calls `doFilterInternal()` through the parent type — our JWT filter runs without Spring needing to know the specific class
+
+**Interview Questions:**
+- Q: What is the difference between compile-time and runtime polymorphism?
+  A: "Compile-time polymorphism is method overloading — resolved at compile time based on parameter types. In our `BankingException`, we have two constructors with different parameters. Runtime polymorphism is method overriding — resolved at runtime based on the actual object type. In our Feign client setup, `AccountServiceClient` is the interface type. At runtime, Spring injects either the real HTTP client or the fallback. `TransactionService` calls `accountServiceClient.getBalance()` — the same line of code, but different behavior depending on which implementation is injected. This is runtime polymorphism."
 
 ---
 
 ## 5. Abstraction
 
-### STAR Answer
-
 **Situation:**
-Our services interact with databases (PostgreSQL, MongoDB, Cassandra), message brokers (Kafka), and external services (SMTP, S3). The business logic — how a loan EMI is calculated, how fraud is scored — should not need to know the SQL, the Kafka topic format, or the S3 bucket structure.
+Services need to access data without knowing the database implementation details. A controller should call a service method without knowing whether it uses PostgreSQL, Redis, or makes an HTTP call.
 
 **Task:**
-Abstract away infrastructure details so business logic is clean and testable, while infrastructure concerns are hidden behind interfaces.
+Define interfaces that describe WHAT to do without specifying HOW — letting implementations vary independently.
 
 **Action:**
+
 ```java
-// ABSTRACTION via interface — AccountRepository hides ALL SQL:
+// ABSTRACT INTERFACE — says what operations exist, not how they work:
 @Repository
 public interface AccountRepository extends JpaRepository<Account, UUID> {
-    // You declare WHAT you want (intent):
+    // JpaRepository<Account, UUID> declares:
+    //   save(Account), findById(UUID), findAll(), deleteById(UUID), etc.
+    // Our additions:
     List<Account> findByUserId(UUID userId);
     Optional<Account> findByAccountNumber(String accountNumber);
-
-    @Query("SELECT a FROM Account a WHERE a.userId = :userId AND a.status = 'ACTIVE'")
-    List<Account> findActiveAccountsByUserId(@Param("userId") UUID userId);
+    // These method signatures describe WHAT — Spring Data generates the HOW
 }
-// Spring Data JPA generates the HOW (SQL) automatically:
-// SELECT * FROM accounts WHERE user_id = ?   ← generated, hidden
 
-// Business logic knows NOTHING about SQL:
+// Caller (AccountService) uses the interface, not the implementation:
 @Service
 public class AccountService {
-    private final AccountRepository accountRepository; // just the interface
+    private final AccountRepository accountRepository;
+    // Spring injects a dynamically-generated implementation
+    // AccountService doesn't know if it's PostgreSQL, H2 (test), or anything else
 
-    public List<Account> getUserAccounts(UUID userId) {
-        return accountRepository.findByUserId(userId); // reads like English
-        // No SQL, no JDBC, no ResultSet — all abstracted away
+    public Account getAccountById(UUID id) {
+        return accountRepository.findById(id).orElseThrow(...);
+        // Calls interface method — works regardless of underlying database
     }
 }
 
-// ABSTRACTION via abstract class — OncePerRequestFilter hides request lifecycle:
-public abstract class OncePerRequestFilter implements Filter {
-    // Spring calls doFilter() — handles servlet lifecycle details
-    @Override
-    public final void doFilter(ServletRequest request, ServletResponse response,
-                               FilterChain chain) {
-        // Handles isAsyncDispatch, isAsyncStarted, etc. — framework details
-        doFilterInternal(...); // calls our abstract method
-    }
+// In tests, we can inject a MOCK:
+// @Mock AccountRepository accountRepository;
+// when(accountRepository.findById(id)).thenReturn(Optional.of(testAccount));
+// The same AccountService code works with the mock
+```
 
-    // WE only implement the abstract method — the interesting part:
-    protected abstract void doFilterInternal(HttpServletRequest request,
-                                              HttpServletResponse response,
-                                              FilterChain filterChain);
-}
+```java
+// ABSTRACT CLASS — partial implementation with hooks for subclasses
+// services/api-gateway — AuthenticationFilter.java
 
-// Our filter extends the abstract class — focuses ONLY on JWT logic:
-public class JwtAuthenticationFilter extends OncePerRequestFilter {
+public class AuthenticationFilter
+        extends AbstractGatewayFilterFactory<AuthenticationFilter.Config> {
+    // AbstractGatewayFilterFactory provides:
+    // - shortcutFieldOrder() method
+    // - name() method (returns class name by default)
+    // - newConfig() method
+    // WE provide:
     @Override
-    protected void doFilterInternal(HttpServletRequest request,
-                                    HttpServletResponse response,
-                                    FilterChain chain) {
-        // ONLY JWT validation logic — no servlet lifecycle complexity
-        String token = extractJwt(request);
-        if (token != null && jwtTokenProvider.validateToken(token)) {
-            setupSecurityContext(token);
-        }
-        chain.doFilter(request, response);
+    public GatewayFilter apply(Config config) {
+        // Our specific JWT validation logic
+        return (exchange, chain) -> { ... };
     }
+    // AbstractGatewayFilterFactory handles registration with Spring Cloud Gateway
+    // We only implement what's unique to our filter
 }
 ```
 
 **Result:**
-- Business logic reads like domain language: `findActiveAccountsByUserId()` instead of SQL
-- Swapping PostgreSQL for another database only requires changing the Repository implementation — zero changes to service layer
-- `JwtAuthenticationFilter` focuses purely on JWT logic — Spring handles all the servlet lifecycle details
+- Switching from PostgreSQL to a different database requires changing only the repository implementation — `AccountService` code stays identical
+- Tests can use mock repositories — fast, no real database needed
+
+**Interview Questions:**
+- Q: What is the difference between abstract class and interface?
+  A: "In our project, we use both. `AccountRepository` is an interface — it's a pure contract, all methods are abstract, Spring Data generates the implementation. `AbstractGatewayFilterFactory` is an abstract class — it provides partial implementation (registration, configuration) and leaves `apply()` as abstract for us to implement. Use interface when you need a pure contract with multiple implementations. Use abstract class when you have shared code plus customization points."
 
 ---
 
-## 6. Interfaces
-
-### STAR Answer
+## 6. Enums
 
 **Situation:**
-Our project has multiple "contracts" that need multiple implementations: repositories (PostgreSQL, MongoDB, Cassandra), HTTP clients (real Feign, fallback, mock), event producers (Kafka producer, mock for tests), and security filters.
+Throughout the banking app, fields have a fixed set of valid values — account types, payment rails, loan types, fraud risk levels. Using plain Strings would allow invalid values.
 
 **Task:**
-Define clear contracts (interfaces) that decouple the "what" from the "how" — allowing easy testing, swapping implementations, and extending behaviour.
+Use enums to restrict field values to a valid set, make code readable, and enable compile-time checking.
 
 **Action:**
+
 ```java
-// 1. Repository interfaces — data access contract:
-public interface AccountRepository extends JpaRepository<Account, UUID> {
-    // JpaRepository interface provides: save(), findById(), findAll(), delete()...
-    // We ADD our custom methods to the contract:
-    List<Account> findByUserId(UUID userId);
-    boolean existsByAccountNumber(String accountNumber);
-}
-// Spring Data provides the implementation — we never write it
+// services/account-service — Account.java
+@Enumerated(EnumType.STRING)  // store "CHECKING" not 0 in database
+public enum AccountType { CHECKING, SAVINGS, INVESTMENT }
+// Instead of: private String accountType = "CHECKING"
+// With enum: private AccountType accountType = AccountType.CHECKING
+// Invalid: accountType = AccountType.INVALID — compile error
+// Invalid: accountType = "CHEKKING" — compile error (no such enum constant)
 
-// 2. Feign client interface — HTTP client contract:
-@FeignClient(name = "account-service", fallback = AccountServiceClientFallback.class)
-public interface AccountServiceClient {
-    @GetMapping("/api/v1/accounts/{accountId}/balance")
-    BigDecimal getBalance(@PathVariable UUID accountId);
+// services/payment-service — Payment.java
+public enum PaymentRail { SWIFT, FEDWIRE, CHIPS, INTERNAL, ACH }
+// In switch expression:
+if (payment.getPaymentRail() == Payment.PaymentRail.SWIFT) {
+    payment.setSwiftMessage(buildSwiftMT103(payment));
 }
-// Feign provides the HTTP implementation — we never write it
-// Fallback class provides the circuit-breaker implementation
+// Compiler knows all possible values — no default case needed
 
-// 3. Multiple interface implementation — SecurityConfig:
-@Configuration
-public class SecurityConfig {
-    @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        http
-            .csrf(csrf -> csrf.disable())        // Customizer interface (lambda)
-            .sessionManagement(session ->        // Customizer interface (lambda)
-                session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            .authorizeHttpRequests(auth -> auth  // Customizer interface (lambda)
-                .requestMatchers("/api/v1/auth/**").permitAll()
-                .anyRequest().authenticated());
-        return http.build();
-    }
+// services/loan-service — Loan.java
+public enum LoanStatus {
+    APPLIED, UNDER_REVIEW, APPROVED, ACTIVE, CLOSED, DEFAULTED, REJECTED
 }
-// Each lambda implements the Customizer<T> @FunctionalInterface
+// State machine: a loan moves through these states in order
+// Can only be one status at a time
 
-// 4. Custom interface — for testability:
-public interface AuditEventPublisher {
-    void publishAuditEvent(String userId, String action, String resource, String status);
-}
-
-@Component
-public class KafkaAuditEventPublisher implements AuditEventPublisher {
-    public void publishAuditEvent(...) {
-        eventProducer.publishEvent(BankingConstants.TOPIC_AUDIT_EVENTS, ...);
-    }
-}
-
-// In tests:
-@Component
-@Profile("test")
-public class NoOpAuditEventPublisher implements AuditEventPublisher {
-    public void publishAuditEvent(...) {
-        // Do nothing in tests — no real Kafka needed
-    }
-}
+// services/fraud-detection-service — FraudScore.java
+public enum FraudRisk { LOW, MEDIUM, HIGH, CRITICAL }
+// Fraud risk is always one of exactly these four values
+// The score → risk mapping is always consistent:
+FraudScore.FraudRisk risk = score < 0.3 ? FraudScore.FraudRisk.LOW
+        : score < 0.5 ? FraudScore.FraudRisk.MEDIUM
+        : score < 0.8 ? FraudScore.FraudRisk.HIGH
+        : FraudScore.FraudRisk.CRITICAL;
 ```
 
-**Result:**
-- `AccountRepository` interface: change from PostgreSQL to another DB → only change the JPA configuration, zero service layer changes
-- `AccountServiceClient` interface: inject mock in tests, Feign in production, fallback in failures — `TransactionService` code never changes
-- Spring auto-selects the right implementation at runtime based on profile, availability, and configuration
-
----
-
-## 7. Enums
-
-### STAR Answer
-
-**Situation:**
-In our banking app, account types, statuses, payment rails, loan types, card types, KYC status, fraud risk levels — all have a fixed set of valid values. Using raw Strings like `"CHECKING"` would allow bugs like `"checking"` (wrong case), `"CHEKING"` (typo), or `"DEBIT_CARD"` (wrong category) to slip through.
-
-**Task:**
-Ensure that only valid, predefined values are used for categorical data — enforced at compile time, not runtime.
-
-**Action:**
 ```java
-// In Account entity — AccountType enum:
-public enum AccountType {
-    CHECKING,
-    SAVINGS,
-    INVESTMENT
-    // Cannot pass "CHEQUING" or "savings" — compiler error
-}
-
-// In Payment entity — full enum with business logic:
+// ENUM with behavior — enums can have fields and methods:
+// Extending the PaymentRail enum with routing logic:
 public enum PaymentRail {
-    SWIFT,
-    FEDWIRE,
-    CHIPS,
-    INTERNAL,
-    ACH;
+    SWIFT("international", 1_000_000_00),
+    FEDWIRE("domestic-large", 10_000_000_00),
+    CHIPS("domestic-large", 10_000_000_00),
+    INTERNAL("internal", Integer.MAX_VALUE),
+    ACH("domestic-small", 25_000_00);
 
-    // Enums can have methods:
-    public boolean isInstant() {
-        return this == INTERNAL;
+    private final String category;
+    private final long maxAmountCents;
+
+    PaymentRail(String category, long maxAmountCents) {
+        this.category = category;
+        this.maxAmountCents = maxAmountCents;
     }
 
-    public boolean requiresBankCode() {
-        return this == SWIFT || this == FEDWIRE || this == CHIPS;
-    }
-}
-
-// In FraudScore model — with score thresholds:
-public enum FraudRisk {
-    LOW,
-    MEDIUM,
-    HIGH,
-    CRITICAL;
-
-    public boolean requiresBlock() {
-        return this == CRITICAL;
-    }
-
-    public boolean requiresAlert() {
-        return this == HIGH || this == CRITICAL;
+    public boolean isValidAmount(long amountCents) {
+        return amountCents <= maxAmountCents;
     }
 }
-
-// In Loan entity — with financial constants:
-public enum LoanType {
-    PERSONAL,
-    HOME,
-    AUTO,
-    BUSINESS,
-    EDUCATION,
-    CREDIT_LINE
-}
-
-// Usage — switch on enum (compiler ensures all cases handled):
-BigDecimal feePercent = switch (payment.getPaymentRail()) {
-    case SWIFT    -> new BigDecimal("0.002");
-    case FEDWIRE  -> new BigDecimal("0.001");
-    case ACH      -> new BigDecimal("0.0005");
-    case CHIPS    -> new BigDecimal("0.001");
-    case INTERNAL -> BigDecimal.ZERO;
-    // Compiler ERROR if you add a new rail and forget this switch → caught at compile time
-};
-
-// Storing in DB — as String (not ordinal):
-@Enumerated(EnumType.STRING)   // stores "CHECKING" not 0
-private AccountType accountType;
-// If you store as ordinal (EnumType.ORDINAL):
-// CHECKING=0, SAVINGS=1, INVESTMENT=2
-// Later: insert MONEY_MARKET between SAVINGS and INVESTMENT
-// → INVESTMENT becomes 3 but all existing DB rows say 2 → data corruption!
-// EnumType.STRING prevents this — always stores the name
-
-// Enum in API:
-@RequestParam Account.AccountType type
-// Spring automatically converts "CHECKING" string from URL → AccountType.CHECKING
-// Invalid value like "CHEQUING" → 400 Bad Request automatically
+// Now: PaymentRail.SWIFT.isValidAmount(5_000_00) → true
+// This keeps rail-specific rules in the enum — not scattered in if-else
 ```
 
 **Result:**
-- Compile-time safety: typos in account types cause build failure, not runtime bugs
-- Switch expressions on enums: the compiler warns if a new enum value is added but not handled in the switch — impossible to forget a case
-- `EnumType.STRING` protects against data corruption when enum values are reordered or new ones inserted
+- `@Enumerated(EnumType.STRING)` stores "CHECKING" instead of 0 — adding a new AccountType doesn't corrupt existing data (if ordinal changes, all stored integers become wrong)
+- Compile-time checking prevents typos like "CHEKKING" or "SAVINGSS" that would only fail at runtime with strings
+
+**Interview Questions:**
+- Q: Why use EnumType.STRING instead of EnumType.ORDINAL?
+  A: "In our account service, we store AccountType as an enum. If we used ORDINAL, CHECKING=0, SAVINGS=1, INVESTMENT=2. If we later add MONEY_MARKET between SAVINGS and INVESTMENT, INVESTMENT becomes ordinal 3. All existing database rows with value 2 now map to MONEY_MARKET — corrupted data. With STRING, we store 'CHECKING', 'SAVINGS', 'INVESTMENT'. Adding MONEY_MARKET doesn't change existing rows. Always use EnumType.STRING in production systems."
+
+- Q: Can enums have methods and fields in Java?
+  A: "Yes. In our project, we could extend PaymentRail enum to have a maxAmount field and an isValidAmount() method. Each enum constant can have different values for these fields. This keeps rail-specific business rules in one place — the enum itself — instead of scattered across if-else chains in services."
