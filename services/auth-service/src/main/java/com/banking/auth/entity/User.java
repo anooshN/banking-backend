@@ -2,9 +2,6 @@ package com.banking.auth.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.LocalDateTime;
 import java.util.Set;
@@ -16,7 +13,6 @@ import java.util.UUID;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@EntityListeners(AuditingEntityListener.class)
 public class User {
 
     @Id
@@ -58,13 +54,13 @@ public class User {
     @Column(name = "locked_until")
     private LocalDateTime lockedUntil;
 
-    @CreatedDate
+    @Builder.Default
     @Column(name = "created_at", updatable = false)
-    private LocalDateTime createdAt;
+    private LocalDateTime createdAt = LocalDateTime.now();
 
-    @LastModifiedDate
+    @Builder.Default
     @Column(name = "updated_at")
-    private LocalDateTime updatedAt;
+    private LocalDateTime updatedAt = LocalDateTime.now();
 
     public enum UserStatus {
         ACTIVE, INACTIVE, LOCKED, PENDING_VERIFICATION
