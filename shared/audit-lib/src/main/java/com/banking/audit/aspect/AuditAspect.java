@@ -30,9 +30,9 @@ public class AuditAspect {
         String userId = extractUserId();
         String correlationId = MDC.get("correlationId");
         long startTime = System.currentTimeMillis();
-        Object result = null;
         String status = "SUCCESS";
         String errorMessage = null;
+        Object result = null;
 
         try {
             result = joinPoint.proceed();
