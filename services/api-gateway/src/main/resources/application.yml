@@ -9,6 +9,10 @@ spring:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
   cloud:
+    config:
+      enabled: false
+      import-check:
+        enabled: false
     gateway:
       globalcors:
         corsConfigurations:
