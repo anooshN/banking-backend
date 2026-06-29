@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
@@ -94,7 +95,7 @@ public class AuthService {
             throw new BankingException("Invalid refresh token", "INVALID_REFRESH_TOKEN", HttpStatus.UNAUTHORIZED);
         }
         redisTemplate.delete(REFRESH_PREFIX + refreshToken);
-        User user = userRepository.findById(java.util.UUID.fromString(storedUserId))
+        User user = userRepository.findById(UUID.fromString(storedUserId))
                 .orElseThrow(() -> new BankingException("User not found", "USER_NOT_FOUND", HttpStatus.NOT_FOUND));
         return generateTokens(user);
     }
