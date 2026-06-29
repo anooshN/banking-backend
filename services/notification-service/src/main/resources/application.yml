@@ -7,13 +7,13 @@ spring:
     mongodb:
       uri: mongodb://${MONGO_USERNAME:banking}:${MONGO_PASSWORD:banking-secret}@${MONGO_HOST:localhost}:27017/${MONGO_DB:banking_notifications}?authSource=admin
   mail:
-    host: ${MAIL_HOST:smtp.gmail.com}
-    port: ${MAIL_PORT:587}
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:25}
     username: ${MAIL_USERNAME:noreply@bankingapp.com}
     password: ${MAIL_PASSWORD:mail-secret}
     properties:
-      mail.smtp.auth: true
-      mail.smtp.starttls.enable: true
+      mail.smtp.auth: false
+      mail.smtp.starttls.enable: false
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     consumer:
