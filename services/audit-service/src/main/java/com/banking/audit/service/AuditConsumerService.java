@@ -24,10 +24,8 @@ public class AuditConsumerService {
     @KafkaListener(topics = "banking.audit.events", groupId = "audit-service-group")
     public void consumeAuditEvent(String event, Acknowledgment ack) {
         try {
-            // Parse event — in prod this is an Avro record
             Map<String, Object> payload = objectMapper.readValue(event, Map.class);
-
-            AuditLog log = AuditLog.builder()
+            AuditLog auditLog = AuditLog.builder()
                     .userId(String.valueOf(payload.getOrDefault("userId", "system")))
                     .eventTime(Instant.now())
                     .eventId(UUID.randomUUID())
@@ -38,11 +36,9 @@ public class AuditConsumerService {
                     .durationMs(Long.valueOf(String.valueOf(payload.getOrDefault("duration", "0"))))
                     .errorMessage(String.valueOf(payload.getOrDefault("errorMessage", "")))
                     .build();
-
-            auditLogRepository.save(log);
+            auditLogRepository.save(auditLog);
             ack.acknowledge();
         } catch (Exception e) {
-            Slf4j.class.getName(); // suppress warning
             log.error("Failed to process audit event: {}", e.getMessage());
         }
     }
