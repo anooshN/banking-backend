@@ -39,7 +39,7 @@ public class AccountController {
 
     @PostMapping("/user/{userId}")
     @Operation(summary = "Create a new account")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('TELLER')")
+    @PreAuthorize("hasRole('CUSTOMER') or hasRole('ADMIN') or hasRole('TELLER')")
     public ResponseEntity<ApiResponse<Account>> createAccount(
             @PathVariable UUID userId,
             @RequestParam Account.AccountType type,
