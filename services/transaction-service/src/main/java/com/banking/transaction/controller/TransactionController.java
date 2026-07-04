@@ -42,15 +42,10 @@ public class TransactionController {
         BigDecimal amount = new BigDecimal(request.get("amount").toString());
         String description = (String) request.getOrDefault("description", "Transfer");
         UUID userId = UUID.fromString(authentication.getName());
-        String correlationId = UUID.randomUUID().toString();
 
-        Transaction debit = transactionService.debit(fromAccountId, userId, amount, description, correlationId);
-        Transaction credit = transactionService.credit(toAccountId, userId, amount, description, correlationId);
+        Map<String, Object> result = transactionService.transfer(
+                fromAccountId, toAccountId, userId, amount, description);
 
-        return ResponseEntity.ok(ApiResponse.success(
-            Map.of("debitTxn", debit.getReferenceNumber(),
-                   "creditTxn", credit.getReferenceNumber(),
-                   "status", "COMPLETED"),
-            "Transfer completed successfully"));
+        return ResponseEntity.ok(ApiResponse.success(result, "Transfer completed successfully"));
     }
 }
