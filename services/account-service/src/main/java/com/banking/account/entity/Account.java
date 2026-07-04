@@ -54,9 +54,10 @@ public class Account {
     @Column(name = "overdraft_limit", precision = 19, scale = 4)
     private BigDecimal overdraftLimit;
 
+    @Builder.Default
     @CreatedDate
     @Column(name = "created_at", updatable = false)
-    private LocalDateTime createdAt;
+    private LocalDateTime createdAt = LocalDateTime.now();
 
     @LastModifiedDate
     @Column(name = "updated_at")
