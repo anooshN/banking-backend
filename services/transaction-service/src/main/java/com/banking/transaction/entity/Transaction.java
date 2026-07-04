@@ -64,9 +64,10 @@ public class Transaction {
     @Column(name = "correlation_id")
     private String correlationId;
 
+    @Builder.Default
     @CreatedDate
     @Column(name = "created_at", updatable = false)
-    private LocalDateTime createdAt;
+    private LocalDateTime createdAt = LocalDateTime.now();
 
     public enum TransactionType { DEBIT, CREDIT, TRANSFER_OUT, TRANSFER_IN }
     public enum TransactionStatus { PENDING, COMPLETED, FAILED, REVERSED }
