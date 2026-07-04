@@ -1,7 +1,7 @@
 package com.banking.transaction.client;
 
+import com.banking.transaction.config.FeignConfig;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import java.math.BigDecimal;
 import java.util.UUID;
 
-@FeignClient(name = "account-service", fallback = AccountServiceClientFallback.class)
+@FeignClient(name = "account-service", configuration = FeignConfig.class, fallback = AccountServiceClientFallback.class)
 public interface AccountServiceClient {
 
     @GetMapping("/api/v1/accounts/{accountId}/balance")
