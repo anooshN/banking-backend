@@ -58,9 +58,10 @@ public class Payment {
     @Column(name = "outbox_processed")
     private boolean outboxProcessed;
 
+    @Builder.Default
     @CreatedDate
     @Column(name = "created_at", updatable = false)
-    private LocalDateTime createdAt;
+    private LocalDateTime createdAt = LocalDateTime.now();
 
     public enum PaymentRail { SWIFT, FEDWIRE, CHIPS, INTERNAL, ACH }
     public enum PaymentStatus { INITIATED, PROCESSING, COMPLETED, FAILED, REVERSED }
