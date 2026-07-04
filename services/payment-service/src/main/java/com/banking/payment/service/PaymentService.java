@@ -54,7 +54,15 @@ public class PaymentService {
         return payment;
     }
 
-    // Outbox pattern: poll unprocessed payments and publish to Kafka
+    public List<Payment> getPaymentsByAccount(UUID accountId) {
+        return paymentRepository.findBySenderAccountId(accountId);
+    }
+
+    public Payment getPaymentById(UUID paymentId) {
+        return paymentRepository.findById(paymentId)
+                .orElseThrow(() -> new BankingException("Payment not found", HttpStatus.NOT_FOUND));
+    }
+
     @Scheduled(fixedDelay = 5000)
     @Transactional
     public void processOutbox() {
