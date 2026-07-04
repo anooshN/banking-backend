@@ -60,7 +60,7 @@ public class PaymentService {
 
     public Payment getPaymentById(UUID paymentId) {
         return paymentRepository.findById(paymentId)
-                .orElseThrow(() -> new BankingException("Payment not found", HttpStatus.NOT_FOUND));
+                .orElseThrow(() -> new BankingException("Payment not found", "PAYMENT_NOT_FOUND", HttpStatus.NOT_FOUND));
     }
 
     @Scheduled(fixedDelay = 5000)
