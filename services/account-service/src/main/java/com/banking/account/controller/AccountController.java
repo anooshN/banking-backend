@@ -23,7 +23,24 @@ public class AccountController {
 
     private final AccountService accountService;
 
-    @GetMapping("/{accountId}")
+    @GetMapping("/{accountId
+    @GetMapping("/{accountId}/balance")
+    @PreAuthorize("hasRole('CUSTOMER') or hasRole('ADMIN') or hasRole('TELLER')")
+    public ResponseEntity<ApiResponse<java.math.BigDecimal>> getBalance(@PathVariable java.util.UUID accountId) {
+        Account account = accountService.getAccountById(accountId);
+        return ResponseEntity.ok(ApiResponse.success(account.getBalance()));
+    }
+
+    @PatchMapping("/{accountId}/balance")
+    @PreAuthorize("hasRole('CUSTOMER') or hasRole('ADMIN') or hasRole('TELLER')")
+    public ResponseEntity<ApiResponse<Account>> updateBalance(
+            @PathVariable java.util.UUID accountId,
+            @RequestParam java.math.BigDecimal amount) {
+        Account account = accountService.updateBalance(accountId, amount);
+        return ResponseEntity.ok(ApiResponse.success(account));
+    }
+
+}")
     @Operation(summary = "Get account by ID")
     @PreAuthorize("hasRole('CUSTOMER') or hasRole('ADMIN') or hasRole('TELLER')")
     public ResponseEntity<ApiResponse<Account>> getAccount(@PathVariable UUID accountId) {
